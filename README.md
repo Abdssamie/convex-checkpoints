@@ -1,0 +1,141 @@
+# Convex Checkpoints
+
+Convex Checkpoints stores user events, deduplicates retried submissions, and
+lets your app attach typed handlers to those events.
+
+It fits cases like:
+
+- send a welcome email after `user.signup`
+- grant credits after the fifth `post.created`
+- keep a queryable audit log of recent events
+
+The component owns the event log. Your app owns the checkpoint logic, auth, and
+any side effects.
+
+## Installation
+
+Install the component in your app's `convex/convex.config.ts`:
+
+```ts
+// convex/convex.config.ts
+import { defineApp } from "convex/server";
+import convexCheckpoints from "@abdssamie/convex-checkpoints/convex.config.js";
+
+const app = defineApp();
+app.use(convexCheckpoints);
+
+export default app;
+```
+
+## Usage
+
+Define your event registry in app code and expose wrapper functions from your
+own app modules. That keeps auth, permission checks, and business rules close
+to the rest of your application code.
+
+```ts
+// convex/checkpoints.ts
+import { components, internal } from "./_generated/api.js";
+import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
+
+export const checkpoints = new ConvexCheckpoints<{
+  "user.signup": { userId: string };
+  "post.created": { userId: string; postId: string };
+}>(components.convexCheckpoints);
+
+checkpoints.on("user.signup", async (ctx, payload) => {
+  await ctx.scheduler.runAfter(30 * 60 * 1000, internal.emails.welcome, {
+    userId: payload.userId,
+  });
+});
+
+checkpoints.on("post.created", async (ctx, payload) => {
+  const count = await ctx.runQuery(internal.posts.countByUser, {
+    userId: payload.userId,
+  });
+
+  if (count === 5) {
+    await ctx.runMutation(internal.credits.add, {
+      userId: payload.userId,
+      amount: 100,
+    });
+  }
+});
+
+export const { submit, listRecent, listByName, listByUser } = checkpoints.api();
+```
+
+Call those wrappers from the rest of your app:
+
+```ts
+// convex/posts.ts
+import { api } from "./_generated/api.js";
+import { mutation } from "./_generated/server.js";
+import { v } from "convex/values";
+
+export const createPost = mutation({
+  args: { body: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const postId = await ctx.db.insert("posts", {
+      body: args.body,
+      userId,
+    });
+
+    await ctx.runMutation(api.checkpoints.submit, {
+      name: "post.created",
+      userId,
+      payload: { userId, postId },
+      idempotencyKey: `post.created:${postId}`,
+    });
+
+    return postId;
+  },
+});
+```
+
+When `idempotencyKey` is present, duplicate submissions return the original
+event ID and skip handler re-execution.
+
+## HTTP
+
+Expose an HTTP route from your app when you need event ingestion over HTTP:
+
+```ts
+// convex/http.ts
+import { checkpoints } from "./checkpoints.js";
+
+export default checkpoints.http("/events");
+```
+
+This registers both `POST /events` and event-specific routes such as
+`POST /events/post.created`.
+
+For event-specific routes, the request body is used as the event payload:
+
+```sh
+curl -X POST "$CONVEX_SITE_URL/events/post.created" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user1","postId":"post1"}'
+```
+
+`POST /events` still accepts JSON with `name`, optional `userId`, optional
+`payload`, optional `idempotencyKey`, and optional `occurredAt`.
+
+TypeScript checks handler payload types from your event registry for
+`checkpoints.on(...)`. Raw HTTP JSON is still untyped at runtime, so validate
+inside your handler if the endpoint is public.
+
+## Tests
+
+When using `convex-test`, register the component with the test instance:
+
+```ts
+import { convexTest } from "convex-test";
+import component from "@abdssamie/convex-checkpoints/test";
+import schema from "./schema.js";
+
+const modules = import.meta.glob("./**/*.*s");
+const t = convexTest(schema, modules);
+component.register(t);
+```

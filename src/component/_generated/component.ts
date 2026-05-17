@@ -1,0 +1,102 @@
+/* eslint-disable */
+/**
+ * Generated `ComponentApi` utility.
+ *
+ * THIS CODE IS AUTOMATICALLY GENERATED.
+ *
+ * To regenerate, run `npx convex dev`.
+ * @module
+ */
+
+import type { FunctionReference } from "convex/server";
+
+/**
+ * A utility for referencing a Convex component's exposed API.
+ *
+ * Useful when expecting a parameter like `components.myComponent`.
+ * Usage:
+ * ```ts
+ * async function myFunction(ctx: QueryCtx, component: ComponentApi) {
+ *   return ctx.runQuery(component.someFile.someQuery, { ...args });
+ * }
+ * ```
+ */
+export type ComponentApi<Name extends string | undefined = string | undefined> =
+  {
+    lib: {
+      listByName: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; name: string },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          idempotencyKey?: string;
+          name: string;
+          occurredAt: number;
+          payload?: any;
+          receivedAt: number;
+          userId?: string;
+        }>,
+        Name
+      >;
+      listByUser: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; userId: string },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          idempotencyKey?: string;
+          name: string;
+          occurredAt: number;
+          payload?: any;
+          receivedAt: number;
+          userId?: string;
+        }>,
+        Name
+      >;
+      listRecent: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          idempotencyKey?: string;
+          name: string;
+          occurredAt: number;
+          payload?: any;
+          receivedAt: number;
+          userId?: string;
+        }>,
+        Name
+      >;
+      submit: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          idempotencyKey?: string;
+          name: string;
+          occurredAt?: number;
+          payload?: any;
+          userId?: string;
+        },
+        string,
+        Name
+      >;
+      submitOnce: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          idempotencyKey?: string;
+          name: string;
+          occurredAt?: number;
+          payload?: any;
+          userId?: string;
+        },
+        { created: boolean; eventId: string },
+        Name
+      >;
+    };
+  };
