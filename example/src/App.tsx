@@ -1,7 +1,6 @@
 import "./App.css";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import type { FunctionArgs } from "convex/server";
 import { api } from "../convex/_generated/api";
 
 const userId = "demo-user";
@@ -44,14 +43,11 @@ const scenarios = [
 ] as const;
 
 type ScenarioName = (typeof scenarios)[number]["name"];
-type PanelEvent = FunctionArgs<typeof api.example.submitFromPanel>["event"];
-type EventPayload<TName extends PanelEvent["name"]> = Extract<
-  PanelEvent,
-  { name: TName }
->["payload"];
 
 function App() {
-  const submitFromPanel = useMutation(api.example.submitFromPanel);
+  const submitPostCreated = useMutation(api.example.submitPostCreated);
+  const submitSignup = useMutation(api.example.submitSignup);
+  const submitProfileCompleted = useMutation(api.example.submitProfileCompleted);
   const resetDebug = useMutation(api.example.resetDebug);
   const events = useQuery(api.example.listByUser, { userId, limit: 30 });
   const actions = useQuery(api.example.listDebugActions, { userId, limit: 30 });
@@ -98,9 +94,7 @@ function App() {
         const body = await response.json();
         setLastResult(`HTTP ${response.status}: ${JSON.stringify(body)}`);
       } else {
-        const eventId = await submitFromPanel({
-          event: toPanelEvent(name, payload, idempotencyKey || undefined),
-        });
+        const eventId = await submitByName(name, payload);
         setLastResult(`mutation: ${eventId}`);
       }
     } catch (error) {
@@ -114,6 +108,34 @@ function App() {
     const scenario = scenarios.find((item) => item.name === name)!;
     setSelected(name);
     setManualPayload(pretty(scenario.payload()));
+  }
+
+  async function submitByName(name: string, payload: Record<string, unknown>) {
+    switch (name) {
+      case "user.signup":
+        return await submitSignup({
+          userId,
+          email: String(payload.email),
+          source: String(payload.source),
+          idempotencyKey: idempotencyKey || undefined,
+        });
+      case "post.created":
+        return await submitPostCreated({
+          userId,
+          postId: String(payload.postId),
+          title: String(payload.title),
+          idempotencyKey: idempotencyKey || undefined,
+        });
+      case "profile.completed":
+        return await submitProfileCompleted({
+          userId,
+          fields: Array.isArray(payload.fields)
+            ? payload.fields.map(String)
+            : [],
+        });
+      default:
+        throw new Error(`No typed mutation configured for ${name}`);
+    }
   }
 
   return (
@@ -272,45 +294,6 @@ function Metric(props: { label: string; value: string | number }) {
 
 function pretty(value: unknown) {
   return JSON.stringify(value, null, 2);
-}
-
-function toPanelEvent(
-  name: string,
-  payload: Record<string, unknown>,
-  idempotencyKey?: string,
-): PanelEvent {
-  switch (name) {
-    case "user.signup":
-      return {
-        name,
-        userId,
-        payload: payload as EventPayload<"user.signup">,
-        idempotencyKey,
-      };
-    case "post.created":
-      return {
-        name,
-        userId,
-        payload: payload as EventPayload<"post.created">,
-        idempotencyKey,
-      };
-    case "profile.completed":
-      return {
-        name,
-        userId,
-        payload: payload as EventPayload<"profile.completed">,
-        idempotencyKey,
-      };
-    case "billing.upgraded":
-      return {
-        name,
-        userId,
-        payload: payload as EventPayload<"billing.upgraded">,
-        idempotencyKey,
-      };
-    default:
-      throw new Error(`Unknown event: ${name}`);
-  }
 }
 
 export default App;

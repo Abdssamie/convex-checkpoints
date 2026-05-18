@@ -10,12 +10,10 @@ describe("example", () => {
   test("submit and listByUser", async () => {
     const t = initConvexTest();
 
-    const eventId = await t.mutation(api.example.submitFromPanel, {
-      event: {
-        name: "post.created",
-        userId: "user1",
-        payload: { userId: "user1", postId: "post1", title: "Test post" },
-      },
+    const eventId = await t.mutation(api.example.submitPostCreated, {
+      userId: "user1",
+      postId: "post1",
+      title: "Test post",
     });
     expect(eventId).toBeDefined();
 
@@ -80,16 +78,10 @@ describe("example", () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
-    await t.mutation(api.example.submitFromPanel, {
-      event: {
-        name: "user.signup",
-        userId: "user1",
-        payload: {
-          userId: "user1",
-          email: "user1@example.com",
-          source: "test",
-        },
-      },
+    await t.mutation(api.example.submitSignup, {
+      userId: "user1",
+      email: "user1@example.com",
+      source: "test",
     });
 
     let actions = await t.query(api.example.listDebugActions, {
@@ -114,15 +106,9 @@ describe("example", () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
-    await t.mutation(api.example.submitFromPanel, {
-      event: {
-        name: "profile.completed",
-        userId: "user1",
-        payload: {
-          userId: "user1",
-          fields: ["name", "avatar", "timezone"],
-        },
-      },
+    await t.mutation(api.example.submitProfileCompleted, {
+      userId: "user1",
+      fields: ["name", "avatar", "timezone"],
     });
 
     let actions = await t.query(api.example.listDebugActions, {

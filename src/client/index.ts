@@ -46,7 +46,10 @@ export class ConvexCheckpoints<
     ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
     args: TypedSubmitArgs<TEventRegistry, TEvent>,
   ) {
-    const result = await this.submitAndTrigger(ctx, args);
+    const result = await ctx.runMutation(this.component.lib.recordOnce, args);
+    if (result.created) {
+      await this.trigger(ctx, args.name, args.payload);
+    }
     return result.eventId;
   }
 
@@ -84,7 +87,7 @@ export class ConvexCheckpoints<
           return json({ error: "invalid_event" }, 400);
         }
 
-        const result = await this.submitAndTrigger(ctx, args);
+        const result = await this.submitFromUntypedArgs(ctx, args);
 
         return json({ eventId: result.eventId, created: result.created }, 202);
       }),
@@ -110,7 +113,7 @@ export class ConvexCheckpoints<
           return json({ error: "invalid_event" }, 400);
         }
 
-        const result = await this.submitAndTrigger(ctx, args);
+        const result = await this.submitFromUntypedArgs(ctx, args);
 
         return json({ eventId: result.eventId, created: result.created }, 202);
       }),
@@ -123,7 +126,7 @@ export class ConvexCheckpoints<
     return http;
   }
 
-  private async submitAndTrigger(
+  private async submitFromUntypedArgs(
     ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
     args: SubmitArgs,
   ) {

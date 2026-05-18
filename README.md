@@ -71,6 +71,7 @@ export const submitPostCreated = mutation({
     title: v.string(),
     idempotencyKey: v.optional(v.string()),
   },
+  returns: v.string(),
   handler: async (ctx, args) => {
     return await checkpoints.submit(ctx, {
       name: "post.created",
@@ -145,9 +146,10 @@ curl -X POST "$CONVEX_SITE_URL/events/post.created" \
 `POST /events` still accepts JSON with `name`, optional `userId`, optional
 `payload`, optional `idempotencyKey`, and optional `occurredAt`.
 
-TypeScript checks handler payload types from your event registry for
-`checkpoints.on(...)`. Raw HTTP JSON is still untyped at runtime, so validate
-inside your handler if the endpoint is public.
+TypeScript checks payload types for `checkpoints.on(...)`,
+`checkpoints.trigger(...)`, and `checkpoints.submit(ctx, ...)` inside Convex
+code. Public Convex mutations and HTTP requests still need app-defined runtime
+validators because TypeScript types are not available at runtime.
 
 ## Tests
 

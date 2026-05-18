@@ -112,65 +112,65 @@ events.on("billing.upgraded", async (ctx, payload) => {
 
 export const { listRecent, listByName, listByUser } = events.api();
 
-export const submitFromPanel = mutation({
+export const submitPostCreated = mutation({
   args: {
-    event: v.union(
-      v.object({
-        name: v.literal("user.signup"),
-        userId: v.string(),
-        payload: v.object({
-          userId: v.string(),
-          email: v.string(),
-          source: v.string(),
-        }),
-        idempotencyKey: v.optional(v.string()),
-        occurredAt: v.optional(v.number()),
-      }),
-      v.object({
-        name: v.literal("post.created"),
-        userId: v.string(),
-        payload: v.object({
-          userId: v.string(),
-          postId: v.string(),
-          title: v.string(),
-        }),
-        idempotencyKey: v.optional(v.string()),
-        occurredAt: v.optional(v.number()),
-      }),
-      v.object({
-        name: v.literal("profile.completed"),
-        userId: v.string(),
-        payload: v.object({
-          userId: v.string(),
-          fields: v.array(v.string()),
-        }),
-        idempotencyKey: v.optional(v.string()),
-        occurredAt: v.optional(v.number()),
-      }),
-      v.object({
-        name: v.literal("billing.upgraded"),
-        userId: v.string(),
-        payload: v.object({
-          userId: v.string(),
-          plan: v.union(v.literal("pro"), v.literal("team")),
-        }),
-        idempotencyKey: v.optional(v.string()),
-        occurredAt: v.optional(v.number()),
-      }),
-    ),
+    userId: v.string(),
+    postId: v.string(),
+    title: v.string(),
+    idempotencyKey: v.optional(v.string()),
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    switch (args.event.name) {
-      case "user.signup":
-        return await events.submit(ctx, args.event);
-      case "post.created":
-        return await events.submit(ctx, args.event);
-      case "profile.completed":
-        return await events.submit(ctx, args.event);
-      case "billing.upgraded":
-        return await events.submit(ctx, args.event);
-    }
+    return await events.submit(ctx, {
+      name: "post.created",
+      userId: args.userId,
+      payload: {
+        userId: args.userId,
+        postId: args.postId,
+        title: args.title,
+      },
+      idempotencyKey: args.idempotencyKey,
+    });
+  },
+});
+
+export const submitSignup = mutation({
+  args: {
+    userId: v.string(),
+    email: v.string(),
+    source: v.string(),
+    idempotencyKey: v.optional(v.string()),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    return await events.submit(ctx, {
+      name: "user.signup",
+      userId: args.userId,
+      payload: {
+        userId: args.userId,
+        email: args.email,
+        source: args.source,
+      },
+      idempotencyKey: args.idempotencyKey,
+    });
+  },
+});
+
+export const submitProfileCompleted = mutation({
+  args: {
+    userId: v.string(),
+    fields: v.array(v.string()),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    return await events.submit(ctx, {
+      name: "profile.completed",
+      userId: args.userId,
+      payload: {
+        userId: args.userId,
+        fields: args.fields,
+      },
+    });
   },
 });
 

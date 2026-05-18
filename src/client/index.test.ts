@@ -86,9 +86,9 @@ describe("client tests", () => {
       postId: "post1",
     });
 
-    const events = await t.query(testApi.listByUser, { userId: "user1" });
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe("post.created");
+    const eventsForUser = await t.query(testApi.listByUser, { userId: "user1" });
+    expect(eventsForUser).toHaveLength(1);
+    expect(eventsForUser[0].name).toBe("post.created");
   });
 
   test("does not re-run handlers for duplicate idempotency keys", async () => {
