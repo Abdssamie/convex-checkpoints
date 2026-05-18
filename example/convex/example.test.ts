@@ -10,10 +10,12 @@ describe("example", () => {
   test("submit and listByUser", async () => {
     const t = initConvexTest();
 
-    const eventId = await t.mutation(api.example.submit, {
-      name: "post.created",
-      userId: "user1",
-      payload: { userId: "user1", postId: "post1" },
+    const eventId = await t.mutation(api.example.submitFromPanel, {
+      event: {
+        name: "post.created",
+        userId: "user1",
+        payload: { userId: "user1", postId: "post1", title: "Test post" },
+      },
     });
     expect(eventId).toBeDefined();
 
@@ -22,7 +24,11 @@ describe("example", () => {
     });
     expect(events).toHaveLength(1);
     expect(events[0].name).toBe("post.created");
-    expect(events[0].payload).toEqual({ userId: "user1", postId: "post1" });
+    expect(events[0].payload).toEqual({
+      userId: "user1",
+      postId: "post1",
+      title: "Test post",
+    });
   });
 
   test("submits HTTP events from event-specific routes", async () => {
@@ -74,13 +80,15 @@ describe("example", () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
-    await t.mutation(api.example.submit, {
-      name: "user.signup",
-      userId: "user1",
-      payload: {
+    await t.mutation(api.example.submitFromPanel, {
+      event: {
+        name: "user.signup",
         userId: "user1",
-        email: "user1@example.com",
-        source: "test",
+        payload: {
+          userId: "user1",
+          email: "user1@example.com",
+          source: "test",
+        },
       },
     });
 
@@ -106,12 +114,14 @@ describe("example", () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
-    await t.mutation(api.example.submit, {
-      name: "profile.completed",
-      userId: "user1",
-      payload: {
+    await t.mutation(api.example.submitFromPanel, {
+      event: {
+        name: "profile.completed",
         userId: "user1",
-        fields: ["name", "avatar", "timezone"],
+        payload: {
+          userId: "user1",
+          fields: ["name", "avatar", "timezone"],
+        },
       },
     });
 

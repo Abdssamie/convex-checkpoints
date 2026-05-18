@@ -36,11 +36,13 @@ to the rest of your application code.
 ```ts
 // convex/checkpoints.ts
 import { components, internal } from "./_generated/api.js";
+import { mutation } from "./_generated/server.js";
+import { v } from "convex/values";
 import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
 
 export const checkpoints = new ConvexCheckpoints<{
   "user.signup": { userId: string };
-  "post.created": { userId: string; postId: string };
+  "post.created": { userId: string; postId: string; title: string };
 }>(components.convexCheckpoints);
 
 checkpoints.on("user.signup", async (ctx, payload) => {
@@ -62,7 +64,28 @@ checkpoints.on("post.created", async (ctx, payload) => {
   }
 });
 
-export const { submit, listRecent, listByName, listByUser } = checkpoints.api();
+export const submitPostCreated = mutation({
+  args: {
+    userId: v.string(),
+    postId: v.string(),
+    title: v.string(),
+    idempotencyKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await checkpoints.submit(ctx, {
+      name: "post.created",
+      userId: args.userId,
+      payload: {
+        userId: args.userId,
+        postId: args.postId,
+        title: args.title,
+      },
+      idempotencyKey: args.idempotencyKey,
+    });
+  },
+});
+
+export const { listRecent, listByName, listByUser } = checkpoints.api();
 ```
 
 Call those wrappers from the rest of your app:
@@ -82,10 +105,10 @@ export const createPost = mutation({
       userId,
     });
 
-    await ctx.runMutation(api.checkpoints.submit, {
-      name: "post.created",
+    await ctx.runMutation(api.checkpoints.submitPostCreated, {
       userId,
-      payload: { userId, postId },
+      postId,
+      title: args.body.slice(0, 80),
       idempotencyKey: `post.created:${postId}`,
     });
 

@@ -7,7 +7,7 @@ const eventValidator = schema.tables.events.validator.extend({
   _creationTime: v.number(),
 });
 
-export const submit = mutation({
+export const record = mutation({
   args: {
     name: v.string(),
     userId: v.optional(v.string()),
@@ -42,7 +42,7 @@ export const submit = mutation({
   },
 });
 
-export const submitOnce = mutation({
+export const recordOnce = mutation({
   args: {
     name: v.string(),
     userId: v.optional(v.string()),

@@ -7,7 +7,7 @@ import { initConvexTest } from "./setup.test.js";
 describe("component lib", () => {
   test("stores submitted events in the audit log", async () => {
     const t = initConvexTest();
-    const eventId = await t.mutation(api.lib.submit, {
+    const eventId = await t.mutation(api.lib.record, {
       name: "post.created",
       userId: "user1",
       payload: { postId: "post1" },
@@ -24,12 +24,12 @@ describe("component lib", () => {
 
   test("deduplicates events by idempotency key", async () => {
     const t = initConvexTest();
-    const firstId = await t.mutation(api.lib.submit, {
+    const firstId = await t.mutation(api.lib.record, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",
     });
-    const secondId = await t.mutation(api.lib.submit, {
+    const secondId = await t.mutation(api.lib.record, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",
@@ -43,12 +43,12 @@ describe("component lib", () => {
 
   test("reports whether an idempotent event was newly created", async () => {
     const t = initConvexTest();
-    const first = await t.mutation(api.lib.submitOnce, {
+    const first = await t.mutation(api.lib.recordOnce, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",
     });
-    const second = await t.mutation(api.lib.submitOnce, {
+    const second = await t.mutation(api.lib.recordOnce, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",

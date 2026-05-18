@@ -1,7 +1,6 @@
 import {
   httpActionGeneric,
   httpRouter,
-  mutationGeneric,
   queryGeneric,
 } from "convex/server";
 import { v } from "convex/values";
@@ -25,6 +24,17 @@ type SubmitArgs = {
   occurredAt?: number;
 };
 
+type TypedSubmitArgs<
+  TEventRegistry extends EventRegistry,
+  TEvent extends EventName<TEventRegistry>,
+> = {
+  name: TEvent;
+  payload: TEventRegistry[TEvent];
+  userId?: string;
+  idempotencyKey?: string;
+  occurredAt?: number;
+};
+
 export class ConvexCheckpoints<
   TEventRegistry extends EventRegistry,
 > extends EventDispatcher<TEventRegistry> {
@@ -32,31 +42,16 @@ export class ConvexCheckpoints<
     super();
   }
 
+  public async submit<TEvent extends EventName<TEventRegistry>>(
+    ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
+    args: TypedSubmitArgs<TEventRegistry, TEvent>,
+  ) {
+    const result = await this.submitAndTrigger(ctx, args);
+    return result.eventId;
+  }
+
   public api() {
     return {
-      submit: mutationGeneric({
-        args: {
-          name: v.string(),
-          userId: v.optional(v.string()),
-          payload: v.optional(v.any()),
-          idempotencyKey: v.optional(v.string()),
-          occurredAt: v.optional(v.number()),
-        },
-        handler: async (ctx, args) => {
-          const result = await ctx.runMutation(
-            this.component.lib.submitOnce,
-            args,
-          );
-          if (result.created) {
-            await this.trigger(
-              ctx,
-              args.name as EventName<TEventRegistry>,
-              args.payload as TEventRegistry[EventName<TEventRegistry>],
-            );
-          }
-          return result.eventId;
-        },
-      }),
       listRecent: queryGeneric({
         args: { limit: v.optional(v.number()) },
         handler: async (ctx, args) => {
@@ -132,7 +127,7 @@ export class ConvexCheckpoints<
     ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
     args: SubmitArgs,
   ) {
-    const result = await ctx.runMutation(this.component.lib.submitOnce, args);
+    const result = await ctx.runMutation(this.component.lib.recordOnce, args);
     if (result.created) {
       await this.trigger(
         ctx,

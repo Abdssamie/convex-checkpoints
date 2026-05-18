@@ -72,7 +72,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         }>,
         Name
       >;
-      submit: FunctionReference<
+      record: FunctionReference<
         "mutation",
         "internal",
         {
@@ -85,7 +85,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         string,
         Name
       >;
-      submitOnce: FunctionReference<
+      recordOnce: FunctionReference<
         "mutation",
         "internal",
         {

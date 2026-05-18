@@ -110,7 +110,69 @@ events.on("billing.upgraded", async (ctx, payload) => {
   });
 });
 
-export const { submit, listRecent, listByName, listByUser } = events.api();
+export const { listRecent, listByName, listByUser } = events.api();
+
+export const submitFromPanel = mutation({
+  args: {
+    event: v.union(
+      v.object({
+        name: v.literal("user.signup"),
+        userId: v.string(),
+        payload: v.object({
+          userId: v.string(),
+          email: v.string(),
+          source: v.string(),
+        }),
+        idempotencyKey: v.optional(v.string()),
+        occurredAt: v.optional(v.number()),
+      }),
+      v.object({
+        name: v.literal("post.created"),
+        userId: v.string(),
+        payload: v.object({
+          userId: v.string(),
+          postId: v.string(),
+          title: v.string(),
+        }),
+        idempotencyKey: v.optional(v.string()),
+        occurredAt: v.optional(v.number()),
+      }),
+      v.object({
+        name: v.literal("profile.completed"),
+        userId: v.string(),
+        payload: v.object({
+          userId: v.string(),
+          fields: v.array(v.string()),
+        }),
+        idempotencyKey: v.optional(v.string()),
+        occurredAt: v.optional(v.number()),
+      }),
+      v.object({
+        name: v.literal("billing.upgraded"),
+        userId: v.string(),
+        payload: v.object({
+          userId: v.string(),
+          plan: v.union(v.literal("pro"), v.literal("team")),
+        }),
+        idempotencyKey: v.optional(v.string()),
+        occurredAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    switch (args.event.name) {
+      case "user.signup":
+        return await events.submit(ctx, args.event);
+      case "post.created":
+        return await events.submit(ctx, args.event);
+      case "profile.completed":
+        return await events.submit(ctx, args.event);
+      case "billing.upgraded":
+        return await events.submit(ctx, args.event);
+    }
+  },
+});
 
 export const listDebugActions = query({
   args: {
