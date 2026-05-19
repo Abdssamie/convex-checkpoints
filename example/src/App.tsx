@@ -47,9 +47,11 @@ type ScenarioName = (typeof scenarios)[number]["name"];
 function App() {
   const submitPostCreated = useMutation(api.example.submitPostCreated);
   const submitSignup = useMutation(api.example.submitSignup);
-  const submitProfileCompleted = useMutation(api.example.submitProfileCompleted);
+  const submitProfileCompleted = useMutation(
+    api.example.submitProfileCompleted,
+  );
   const resetDebug = useMutation(api.example.resetDebug);
-  const events = useQuery(api.example.listByUser, { userId, limit: 30 });
+  const checkpoints = useQuery(api.example.listByUser, { userId, limit: 30 });
   const actions = useQuery(api.example.listDebugActions, { userId, limit: 30 });
   const stats = useQuery(api.example.getStats, { userId });
 
@@ -71,19 +73,22 @@ function App() {
 
   async function fireScenario(name: ScenarioName) {
     const scenario = scenarios.find((item) => item.name === name)!;
-    await submitEvent(name, scenario.payload());
+    await submitCheckpoint(name, scenario.payload());
   }
 
   async function submitManual() {
     const payload = JSON.parse(manualPayload) as Record<string, unknown>;
-    await submitEvent(selected, payload);
+    await submitCheckpoint(selected, payload);
   }
 
-  async function submitEvent(name: string, payload: Record<string, unknown>) {
+  async function submitCheckpoint(
+    name: string,
+    payload: Record<string, unknown>,
+  ) {
     setBusy(true);
     try {
       if (transport === "http") {
-        const response = await fetch(`${siteUrl}/events/${name}`, {
+        const response = await fetch(`${siteUrl}/checkpoints/${name}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -94,8 +99,8 @@ function App() {
         const body = await response.json();
         setLastResult(`HTTP ${response.status}: ${JSON.stringify(body)}`);
       } else {
-        const eventId = await submitByName(name, payload);
-        setLastResult(`mutation: ${eventId}`);
+        const checkpointId = await submitByName(name, payload);
+        setLastResult(`mutation: ${checkpointId}`);
       }
     } catch (error) {
       setLastResult(error instanceof Error ? error.message : String(error));
@@ -143,7 +148,7 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Convex Checkpoints Debugger</p>
-          <h1>Event flow workbench</h1>
+          <h1>Checkpoint flow workbench</h1>
         </div>
         <button
           className="button ghost"
@@ -167,7 +172,7 @@ function App() {
       <section className="workspace">
         <div className="panel composer">
           <div className="panelHeader">
-            <h2>Submit Event</h2>
+            <h2>Submit Checkpoint</h2>
             <div className="segmented">
               <button
                 className={transport === "mutation" ? "active" : ""}
@@ -199,10 +204,12 @@ function App() {
           </div>
 
           <label className="field">
-            <span>Event</span>
+            <span>Checkpoint</span>
             <select
               value={selected}
-              onChange={(event) => loadScenario(event.target.value as ScenarioName)}
+              onChange={(change) =>
+                loadScenario(change.target.value as ScenarioName)
+              }
             >
               {scenarios.map((scenario) => (
                 <option key={scenario.name} value={scenario.name}>
@@ -216,7 +223,7 @@ function App() {
             <span>Payload</span>
             <textarea
               value={manualPayload}
-              onChange={(event) => setManualPayload(event.target.value)}
+              onChange={(change) => setManualPayload(change.target.value)}
               spellCheck={false}
             />
           </label>
@@ -225,12 +232,16 @@ function App() {
             <span>Idempotency key</span>
             <input
               value={idempotencyKey}
-              onChange={(event) => setIdempotencyKey(event.target.value)}
+              onChange={(change) => setIdempotencyKey(change.target.value)}
               placeholder={`${selected}:demo`}
             />
           </label>
 
-          <button className="button primary" onClick={submitManual} disabled={busy}>
+          <button
+            className="button primary"
+            onClick={submitManual}
+            disabled={busy}
+          >
             Send {selectedScenario.label}
           </button>
 
@@ -243,7 +254,9 @@ function App() {
         <div className="panel">
           <div className="panelHeader">
             <h2>Handler Actions</h2>
-            <span>{actions === undefined ? "loading" : `${actions.length} rows`}</span>
+            <span>
+              {actions === undefined ? "loading" : `${actions.length} rows`}
+            </span>
           </div>
           <div className="timeline">
             {actions?.map((action) => (
@@ -254,26 +267,34 @@ function App() {
                 </div>
                 <div className="rowMeta">
                   <span>{action.status}</span>
-                  <code>{action.eventName}</code>
+                  <code>{action.checkpointName}</code>
                 </div>
               </article>
             ))}
           </div>
         </div>
 
-        <div className="panel eventLog">
+        <div className="panel checkpointLog">
           <div className="panelHeader">
-            <h2>Stored Events</h2>
-            <span>{events === undefined ? "loading" : `${events.length} rows`}</span>
+            <h2>Stored Checkpoints</h2>
+            <span>
+              {checkpoints === undefined
+                ? "loading"
+                : `${checkpoints.length} rows`}
+            </span>
           </div>
           <div className="timeline">
-            {events?.map((event) => (
-              <article key={event._id} className="row eventRow">
+            {checkpoints?.map((checkpoint) => (
+              <article key={checkpoint._id} className="row checkpointRow">
                 <div>
-                  <strong>{event.name}</strong>
-                  <pre>{JSON.stringify(event.payload ?? null, null, 2)}</pre>
+                  <strong>{checkpoint.name}</strong>
+                  <pre>
+                    {JSON.stringify(checkpoint.payload ?? null, null, 2)}
+                  </pre>
                 </div>
-                <time>{new Date(event.receivedAt).toLocaleTimeString()}</time>
+                <time>
+                  {new Date(checkpoint.receivedAt).toLocaleTimeString()}
+                </time>
               </article>
             ))}
           </div>

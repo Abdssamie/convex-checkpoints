@@ -1,25 +1,21 @@
-import {
-  httpActionGeneric,
-  httpRouter,
-  queryGeneric,
-} from "convex/server";
+import { httpActionGeneric, httpRouter, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
 import {
-  ConvexCheckpoints as EventDispatcher,
-  type EventHandler,
-} from "../component/eventDispatcher.js";
+  ConvexCheckpoints as CheckpointDispatcher,
+  type CheckpointHandler,
+} from "../component/checkpointDispatcher.js";
 
-type EventRegistry = Record<string, unknown>;
-type EventName<TEventRegistry extends EventRegistry> = Extract<
-  keyof TEventRegistry,
+type CheckpointRegistry = Record<string, unknown>;
+type CheckpointName<TCheckpointRegistry extends CheckpointRegistry> = Extract<
+  keyof TCheckpointRegistry,
   string
 >;
 
 type BaseSubmitArgs = {
   userId?: string;
   idempotencyKey?: string;
-  occurredAt?: number;
+  reachedAt?: number;
 };
 
 type UntypedSubmitArgs = BaseSubmitArgs & {
@@ -28,29 +24,29 @@ type UntypedSubmitArgs = BaseSubmitArgs & {
 };
 
 type SubmitArgs<
-  TEventRegistry extends EventRegistry,
-  TEvent extends EventName<TEventRegistry>,
+  TCheckpointRegistry extends CheckpointRegistry,
+  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
 > = BaseSubmitArgs & {
-  name: TEvent;
-  payload: TEventRegistry[TEvent];
+  name: TCheckpoint;
+  payload: TCheckpointRegistry[TCheckpoint];
 };
 
 export class ConvexCheckpoints<
-  TEventRegistry extends EventRegistry,
-> extends EventDispatcher<TEventRegistry> {
+  TCheckpointRegistry extends CheckpointRegistry,
+> extends CheckpointDispatcher<TCheckpointRegistry> {
   constructor(private component: ComponentApi) {
     super();
   }
 
-  public async submit<TEvent extends EventName<TEventRegistry>>(
-    ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
-    args: SubmitArgs<TEventRegistry, TEvent>,
+  public async submit<TCheckpoint extends CheckpointName<TCheckpointRegistry>>(
+    ctx: Parameters<ConvexCheckpoints<TCheckpointRegistry>["trigger"]>[0],
+    args: SubmitArgs<TCheckpointRegistry, TCheckpoint>,
   ) {
     const result = await ctx.runMutation(this.component.lib.record, args);
     if (result.created) {
       await this.trigger(ctx, args.name, args.payload);
     }
-    return result.eventId;
+    return result.checkpointId;
   }
 
   public api() {
@@ -76,7 +72,7 @@ export class ConvexCheckpoints<
     };
   }
 
-  public http(path = "/events") {
+  public http(path = "/checkpoints") {
     const http = httpRouter();
     http.route({
       path,
@@ -84,12 +80,15 @@ export class ConvexCheckpoints<
       handler: httpActionGeneric(async (ctx, request) => {
         const args = await readSubmitArgsFromBody(request);
         if (args === null) {
-          return json({ error: "invalid_event" }, 400);
+          return json({ error: "invalid_checkpoint" }, 400);
         }
 
         const result = await this.submitFromArgs(ctx, args);
 
-        return json({ eventId: result.eventId, created: result.created }, 202);
+        return json(
+          { checkpointId: result.checkpointId, created: result.created },
+          202,
+        );
       }),
     });
     http.route({
@@ -103,19 +102,22 @@ export class ConvexCheckpoints<
       pathPrefix,
       method: "POST",
       handler: httpActionGeneric(async (ctx, request) => {
-        const eventName = readEventNameFromPath(request, pathPrefix);
-        if (eventName === null) {
-          return json({ error: "invalid_event_path" }, 400);
+        const checkpointName = readCheckpointNameFromPath(request, pathPrefix);
+        if (checkpointName === null) {
+          return json({ error: "invalid_checkpoint_path" }, 400);
         }
 
-        const args = await readSubmitArgsFromPath(request, eventName);
+        const args = await readSubmitArgsFromPath(request, checkpointName);
         if (args === null) {
-          return json({ error: "invalid_event" }, 400);
+          return json({ error: "invalid_checkpoint" }, 400);
         }
 
         const result = await this.submitFromArgs(ctx, args);
 
-        return json({ eventId: result.eventId, created: result.created }, 202);
+        return json(
+          { checkpointId: result.checkpointId, created: result.created },
+          202,
+        );
       }),
     });
     http.route({
@@ -127,69 +129,75 @@ export class ConvexCheckpoints<
   }
 
   private async submitFromArgs(
-    ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
+    ctx: Parameters<ConvexCheckpoints<TCheckpointRegistry>["trigger"]>[0],
     args: UntypedSubmitArgs,
   ) {
     const result = await ctx.runMutation(this.component.lib.record, args);
     if (result.created) {
       await this.trigger(
         ctx,
-        args.name as EventName<TEventRegistry>,
-        args.payload as TEventRegistry[EventName<TEventRegistry>],
+        args.name as CheckpointName<TCheckpointRegistry>,
+        args.payload as TCheckpointRegistry[CheckpointName<TCheckpointRegistry>],
       );
     }
     return result;
   }
 }
 
-export type { EventHandler };
+export type { CheckpointHandler };
 
 async function readSubmitArgsFromBody(
   request: Request,
 ): Promise<UntypedSubmitArgs | null> {
-  const event = await readJsonObject(request);
-  if (event === null || typeof event.name !== "string") {
+  const checkpoint = await readJsonObject(request);
+  if (checkpoint === null || typeof checkpoint.name !== "string") {
     return null;
   }
-  return readSubmitArgs(event.name, event, event.payload);
+  return readSubmitArgs(checkpoint.name, checkpoint, checkpoint.payload);
 }
 
 async function readSubmitArgsFromPath(
   request: Request,
   name: string,
 ): Promise<UntypedSubmitArgs | null> {
-  const event = await readJsonObject(request);
-  if (event === null) {
+  const checkpoint = await readJsonObject(request);
+  if (checkpoint === null) {
     return null;
   }
 
-  return readSubmitArgs(name, event, event);
+  return readSubmitArgs(name, checkpoint, checkpoint);
 }
 
 function readSubmitArgs(
   name: string,
-  event: Record<string, unknown>,
+  checkpoint: Record<string, unknown>,
   payload: unknown,
 ): UntypedSubmitArgs | null {
-  if (event.userId !== undefined && typeof event.userId !== "string") {
-    return null;
-  }
   if (
-    event.idempotencyKey !== undefined &&
-    typeof event.idempotencyKey !== "string"
+    checkpoint.userId !== undefined &&
+    typeof checkpoint.userId !== "string"
   ) {
     return null;
   }
-  if (event.occurredAt !== undefined && typeof event.occurredAt !== "number") {
+  if (
+    checkpoint.idempotencyKey !== undefined &&
+    typeof checkpoint.idempotencyKey !== "string"
+  ) {
+    return null;
+  }
+  if (
+    checkpoint.reachedAt !== undefined &&
+    typeof checkpoint.reachedAt !== "number"
+  ) {
     return null;
   }
 
   return {
     name,
-    userId: event.userId,
+    userId: checkpoint.userId,
     payload,
-    idempotencyKey: event.idempotencyKey,
-    occurredAt: event.occurredAt,
+    idempotencyKey: checkpoint.idempotencyKey,
+    reachedAt: checkpoint.reachedAt,
   };
 }
 
@@ -210,18 +218,21 @@ async function readJsonObject(
   return body as Record<string, unknown>;
 }
 
-function readEventNameFromPath(request: Request, pathPrefix: string) {
+function readCheckpointNameFromPath(request: Request, pathPrefix: string) {
   const path = new URL(request.url).pathname;
   if (!path.startsWith(pathPrefix)) {
     return null;
   }
-  const encodedEventName = path.slice(pathPrefix.length);
-  if (encodedEventName.length === 0 || encodedEventName.includes("/")) {
+  const encodedCheckpointName = path.slice(pathPrefix.length);
+  if (
+    encodedCheckpointName.length === 0 ||
+    encodedCheckpointName.includes("/")
+  ) {
     return null;
   }
 
   try {
-    return decodeURIComponent(encodedEventName);
+    return decodeURIComponent(encodedCheckpointName);
   } catch {
     return null;
   }

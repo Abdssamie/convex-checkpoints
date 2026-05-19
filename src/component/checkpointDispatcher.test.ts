@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import { makeFunctionReference } from "convex/server";
-import { ConvexCheckpoints } from "./eventDispatcher.js";
+import { ConvexCheckpoints } from "./checkpointDispatcher.js";
 
-type Events = {
+type Checkpoints = {
   "user.signup": { userId: string };
   "post.created": { userId: string; postId: string };
 };
@@ -14,12 +14,12 @@ function createCtx() {
       runAt: vi.fn(async () => "scheduled"),
       cancel: vi.fn(async () => undefined),
     },
-  } as unknown as Parameters<ConvexCheckpoints<Events>["trigger"]>[0];
+  } as unknown as Parameters<ConvexCheckpoints<Checkpoints>["trigger"]>[0];
 }
 
-describe("ConvexCheckpoints event dispatcher", () => {
-  test("runs the matching event", async () => {
-    const checkpoints = new ConvexCheckpoints<Events>();
+describe("ConvexCheckpoints checkpoint dispatcher", () => {
+  test("runs the matching checkpoint", async () => {
+    const checkpoints = new ConvexCheckpoints<Checkpoints>();
     const sendWelcome = makeFunctionReference<"action">("emails:welcome");
     const ctx = createCtx();
 
@@ -41,7 +41,7 @@ describe("ConvexCheckpoints event dispatcher", () => {
   });
 
   test("does nothing when no handler is registered", async () => {
-    const checkpoints = new ConvexCheckpoints<Events>();
+    const checkpoints = new ConvexCheckpoints<Checkpoints>();
     const ctx = createCtx();
 
     await checkpoints.trigger(ctx, "post.created", {
@@ -52,8 +52,8 @@ describe("ConvexCheckpoints event dispatcher", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  test("runs every handler registered for the same event", async () => {
-    const checkpoints = new ConvexCheckpoints<Events>();
+  test("runs every handler registered for the same checkpoint", async () => {
+    const checkpoints = new ConvexCheckpoints<Checkpoints>();
     const first = vi.fn();
     const second = vi.fn();
     const ctx = createCtx();

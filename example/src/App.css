@@ -7,8 +7,7 @@
   padding: 28px;
   background:
     linear-gradient(90deg, rgba(24, 32, 29, 0.06) 1px, transparent 1px),
-    linear-gradient(rgba(24, 32, 29, 0.06) 1px, transparent 1px),
-    #f3f0e8;
+    linear-gradient(rgba(24, 32, 29, 0.06) 1px, transparent 1px), #f3f0e8;
   background-size: 24px 24px;
 }
 
@@ -312,7 +311,7 @@ textarea {
   text-transform: uppercase;
 }
 
-.eventRow pre {
+.checkpointRow pre {
   max-width: 100%;
   margin: 8px 0 0;
   color: #39463f;

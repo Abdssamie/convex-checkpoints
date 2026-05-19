@@ -10,17 +10,17 @@ import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
 
 const demoUserId = "demo-user";
 
-export const events = new ConvexCheckpoints<{
+export const checkpoints = new ConvexCheckpoints<{
   "user.signup": { userId: string; email: string; source: string };
   "post.created": { userId: string; postId: string; title: string };
   "profile.completed": { userId: string; fields: string[] };
   "billing.upgraded": { userId: string; plan: "pro" | "team" };
 }>(components.convexCheckpoints);
 
-events.on("user.signup", async (ctx, payload) => {
+checkpoints.on("user.signup", async (ctx, payload) => {
   await ctx.runMutation(internal.example.logAction, {
     userId: payload.userId,
-    eventName: "user.signup",
+    checkpointName: "user.signup",
     action: "welcome_email",
     status: "scheduled",
     detail: `Welcome email scheduled for ${payload.email}`,
@@ -36,7 +36,7 @@ events.on("user.signup", async (ctx, payload) => {
   );
 });
 
-events.on("post.created", async (ctx, payload) => {
+checkpoints.on("post.created", async (ctx, payload) => {
   const postsCreated: number = await ctx.runMutation(
     internal.example.incrementPosts,
     {
@@ -46,7 +46,7 @@ events.on("post.created", async (ctx, payload) => {
 
   await ctx.runMutation(internal.example.logAction, {
     userId: payload.userId,
-    eventName: "post.created",
+    checkpointName: "post.created",
     action: "post_counter",
     status: "updated",
     detail: `Post counter is now ${postsCreated}`,
@@ -54,16 +54,13 @@ events.on("post.created", async (ctx, payload) => {
   });
 
   if (postsCreated === 5) {
-    const credits: number = await ctx.runMutation(
-      internal.example.addCredits,
-      {
-        userId: payload.userId,
-        amount: 100,
-      },
-    );
+    const credits: number = await ctx.runMutation(internal.example.addCredits, {
+      userId: payload.userId,
+      amount: 100,
+    });
     await ctx.runMutation(internal.example.logAction, {
       userId: payload.userId,
-      eventName: "post.created",
+      checkpointName: "post.created",
       action: "credits_awarded",
       status: "completed",
       detail: `Granted 100 credits at 5 posts. Balance: ${credits}`,
@@ -72,13 +69,13 @@ events.on("post.created", async (ctx, payload) => {
   }
 });
 
-events.on("profile.completed", async (ctx, payload) => {
+checkpoints.on("profile.completed", async (ctx, payload) => {
   await ctx.runMutation(internal.example.completeProfile, {
     userId: payload.userId,
   });
   await ctx.runMutation(internal.example.logAction, {
     userId: payload.userId,
-    eventName: "profile.completed",
+    checkpointName: "profile.completed",
     action: "profile_badge",
     status: "completed",
     detail: `Profile badge unlocked with ${payload.fields.length} fields`,
@@ -94,7 +91,7 @@ events.on("profile.completed", async (ctx, payload) => {
   );
 });
 
-events.on("billing.upgraded", async (ctx, payload) => {
+checkpoints.on("billing.upgraded", async (ctx, payload) => {
   const amount = payload.plan === "team" ? 1000 : 300;
   const credits: number = await ctx.runMutation(internal.example.addCredits, {
     userId: payload.userId,
@@ -102,7 +99,7 @@ events.on("billing.upgraded", async (ctx, payload) => {
   });
   await ctx.runMutation(internal.example.logAction, {
     userId: payload.userId,
-    eventName: "billing.upgraded",
+    checkpointName: "billing.upgraded",
     action: "plan_credits",
     status: "completed",
     detail: `Added ${amount} ${payload.plan} credits. Balance: ${credits}`,
@@ -110,7 +107,7 @@ events.on("billing.upgraded", async (ctx, payload) => {
   });
 });
 
-export const { listRecent, listByName, listByUser } = events.api();
+export const { listRecent, listByName, listByUser } = checkpoints.api();
 
 export const submitPostCreated = mutation({
   args: {
@@ -121,7 +118,7 @@ export const submitPostCreated = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    return await events.submit(ctx, {
+    return await checkpoints.submit(ctx, {
       name: "post.created",
       userId: args.userId,
       payload: {
@@ -143,7 +140,7 @@ export const submitSignup = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    return await events.submit(ctx, {
+    return await checkpoints.submit(ctx, {
       name: "user.signup",
       userId: args.userId,
       payload: {
@@ -163,7 +160,7 @@ export const submitProfileCompleted = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    return await events.submit(ctx, {
+    return await checkpoints.submit(ctx, {
       name: "profile.completed",
       userId: args.userId,
       payload: {
@@ -184,7 +181,7 @@ export const listDebugActions = query({
       _id: v.id("debugActions"),
       _creationTime: v.number(),
       userId: v.string(),
-      eventName: v.string(),
+      checkpointName: v.string(),
       action: v.string(),
       status: v.string(),
       detail: v.string(),
@@ -256,7 +253,7 @@ export const resetDebug = mutation({
 export const logAction = internalMutation({
   args: {
     userId: v.string(),
-    eventName: v.string(),
+    checkpointName: v.string(),
     action: v.string(),
     status: v.string(),
     detail: v.string(),
@@ -329,7 +326,7 @@ export const markWelcomeEmailSent = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.insert("debugActions", {
       userId: args.userId,
-      eventName: "user.signup",
+      checkpointName: "user.signup",
       action: "welcome_email_sent",
       status: "completed",
       detail: `Delayed welcome email sent to ${args.email}`,
@@ -349,7 +346,7 @@ export const auditProfileCompletion = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.insert("debugActions", {
       userId: args.userId,
-      eventName: "profile.completed",
+      checkpointName: "profile.completed",
       action: "profile_audit",
       status: "completed",
       detail: `Profile completion audited for ${args.fields.length} fields`,

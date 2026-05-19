@@ -33,8 +33,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           _id: string;
           idempotencyKey?: string;
           name: string;
-          occurredAt: number;
           payload?: any;
+          reachedAt: number;
           receivedAt: number;
           userId?: string;
         }>,
@@ -49,8 +49,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           _id: string;
           idempotencyKey?: string;
           name: string;
-          occurredAt: number;
           payload?: any;
+          reachedAt: number;
           receivedAt: number;
           userId?: string;
         }>,
@@ -65,8 +65,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           _id: string;
           idempotencyKey?: string;
           name: string;
-          occurredAt: number;
           payload?: any;
+          reachedAt: number;
           receivedAt: number;
           userId?: string;
         }>,
@@ -78,11 +78,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           idempotencyKey?: string;
           name: string;
-          occurredAt?: number;
           payload?: any;
+          reachedAt?: number;
           userId?: string;
         },
-        { created: boolean; eventId: string },
+        { checkpointId: string; created: boolean },
         Name
       >;
     };

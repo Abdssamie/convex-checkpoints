@@ -1,16 +1,16 @@
 # Convex Checkpoints
 
-Convex Checkpoints stores user events, deduplicates retried submissions, and
-lets your app attach typed handlers to those events.
+Convex Checkpoints stores user checkpoints, deduplicates retried submissions,
+and lets your app attach typed handlers to those checkpoints.
 
 It fits cases like:
 
 - send a welcome email after `user.signup`
 - grant credits after the fifth `post.created`
-- keep a queryable audit log of recent events
+- keep a queryable audit log of recent checkpoints
 
-The component owns the event log. Your app owns the checkpoint logic, auth, and
-any side effects.
+The component owns the checkpoint log. Your app owns the checkpoint logic, auth,
+and any side effects.
 
 ## Installation
 
@@ -29,18 +29,19 @@ export default app;
 
 ## Usage
 
-Define your event registry in app code and expose wrapper functions from your
-own app modules. That keeps auth, permission checks, and business rules close
-to the rest of your application code.
+Define your checkpoint registry in app code and expose wrapper functions from
+your own app modules. That keeps auth, permission checks, and business rules
+close to the rest of your application code.
 
 Expose checkpoint submissions as Convex mutations by default. Mutations are the
-right fit when recording an event, updating Convex data, reading Convex data, or
-scheduling follow-up work from a handler.
+right fit when recording a checkpoint, updating Convex data, reading Convex
+data, or scheduling follow-up work from a handler.
 
 Use an action only when the submit path needs external, non-transactional work,
 such as calling a third-party API, sending an email directly, using Node APIs,
 or doing longer-running processing. For most integrations, keep the checkpoint
-submission in a mutation and schedule an internal action from the event handler:
+submission in a mutation and schedule an internal action from the checkpoint
+handler:
 
 ```ts
 checkpoints.on("user.signup", async (ctx, payload) => {
@@ -139,32 +140,33 @@ export const createPost = mutation({
 ```
 
 When `idempotencyKey` is present, duplicate submissions return the original
-event ID and skip handler re-execution.
+checkpoint ID and skip handler re-execution.
 
 ## HTTP
 
-Expose an HTTP route from your app when you need event ingestion over HTTP:
+Expose an HTTP route from your app when you need checkpoint ingestion over HTTP:
 
 ```ts
 // convex/http.ts
 import { checkpoints } from "./checkpoints.js";
 
-export default checkpoints.http("/events");
+export default checkpoints.http("/checkpoints");
 ```
 
-This registers both `POST /events` and event-specific routes such as
-`POST /events/post.created`.
+This registers both `POST /checkpoints` and checkpoint-specific routes such as
+`POST /checkpoints/post.created`.
 
-For event-specific routes, the request body is used as the event payload:
+For checkpoint-specific routes, the request body is used as the checkpoint
+payload:
 
 ```sh
-curl -X POST "$CONVEX_SITE_URL/events/post.created" \
+curl -X POST "$CONVEX_SITE_URL/checkpoints/post.created" \
   -H "Content-Type: application/json" \
   -d '{"userId":"user1","postId":"post1"}'
 ```
 
-`POST /events` still accepts JSON with `name`, optional `userId`, optional
-`payload`, optional `idempotencyKey`, and optional `occurredAt`.
+`POST /checkpoints` still accepts JSON with `name`, optional `userId`, optional
+`payload`, optional `idempotencyKey`, and optional `reachedAt`.
 
 TypeScript checks payload types for `checkpoints.on(...)`,
 `checkpoints.trigger(...)`, and `checkpoints.submit(ctx, ...)` inside Convex

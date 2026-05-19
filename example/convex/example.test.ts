@@ -10,29 +10,29 @@ describe("example", () => {
   test("submit and listByUser", async () => {
     const t = initConvexTest();
 
-    const eventId = await t.mutation(api.example.submitPostCreated, {
+    const checkpointId = await t.mutation(api.example.submitPostCreated, {
       userId: "user1",
       postId: "post1",
       title: "Test post",
     });
-    expect(eventId).toBeDefined();
+    expect(checkpointId).toBeDefined();
 
-    const events = await t.query(api.example.listByUser, {
+    const checkpoints = await t.query(api.example.listByUser, {
       userId: "user1",
     });
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe("post.created");
-    expect(events[0].payload).toEqual({
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0].name).toBe("post.created");
+    expect(checkpoints[0].payload).toEqual({
       userId: "user1",
       postId: "post1",
       title: "Test post",
     });
   });
 
-  test("submits HTTP events from event-specific routes", async () => {
+  test("submits HTTP checkpoints from checkpoint-specific routes", async () => {
     const t = initConvexTest();
 
-    const response = await t.fetch("/events/post.created", {
+    const response = await t.fetch("/checkpoints/post.created", {
       method: "POST",
       body: JSON.stringify({
         userId: "user1",
@@ -44,21 +44,21 @@ describe("example", () => {
     const body = await response.json();
     expect(body.created).toBe(true);
 
-    const events = await t.query(api.example.listByUser, {
+    const checkpoints = await t.query(api.example.listByUser, {
       userId: "user1",
     });
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe("post.created");
-    expect(events[0].payload).toEqual({
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0].name).toBe("post.created");
+    expect(checkpoints[0].payload).toEqual({
       userId: "user1",
       postId: "post1",
     });
   });
 
-  test("submits HTTP events without registered handlers", async () => {
+  test("submits HTTP checkpoints without registered handlers", async () => {
     const t = initConvexTest();
 
-    const response = await t.fetch("/events/user.signup", {
+    const response = await t.fetch("/checkpoints/user.signup", {
       method: "POST",
       body: JSON.stringify({
         userId: "user1",
@@ -67,11 +67,11 @@ describe("example", () => {
 
     expect(response.status).toBe(202);
 
-    const events = await t.query(api.example.listByUser, {
+    const checkpoints = await t.query(api.example.listByUser, {
       userId: "user1",
     });
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe("user.signup");
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0].name).toBe("user.signup");
   });
 
   test("runs scheduled runAfter action from signup handler", async () => {

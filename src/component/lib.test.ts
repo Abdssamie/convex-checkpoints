@@ -5,25 +5,25 @@ import { api } from "./_generated/api.js";
 import { initConvexTest } from "./setup.test.js";
 
 describe("component lib", () => {
-  test("stores submitted events in the audit log", async () => {
+  test("stores submitted checkpoints in the audit log", async () => {
     const t = initConvexTest();
     const result = await t.mutation(api.lib.record, {
       name: "post.created",
       userId: "user1",
       payload: { postId: "post1" },
-      occurredAt: 123,
+      reachedAt: 123,
     });
 
-    expect(result.eventId).toBeDefined();
+    expect(result.checkpointId).toBeDefined();
     expect(result.created).toBe(true);
 
-    const events = await t.query(api.lib.listByUser, { userId: "user1" });
-    expect(events).toHaveLength(1);
-    expect(events[0].name).toBe("post.created");
-    expect(events[0].payload).toEqual({ postId: "post1" });
+    const checkpoints = await t.query(api.lib.listByUser, { userId: "user1" });
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0].name).toBe("post.created");
+    expect(checkpoints[0].payload).toEqual({ postId: "post1" });
   });
 
-  test("deduplicates events by idempotency key", async () => {
+  test("deduplicates checkpoints by idempotency key", async () => {
     const t = initConvexTest();
     const first = await t.mutation(api.lib.record, {
       name: "user.signup",
@@ -38,11 +38,13 @@ describe("component lib", () => {
 
     expect(first.created).toBe(true);
     expect(second).toEqual({
-      eventId: first.eventId,
+      checkpointId: first.checkpointId,
       created: false,
     });
 
-    const events = await t.query(api.lib.listByName, { name: "user.signup" });
-    expect(events).toHaveLength(1);
+    const checkpoints = await t.query(api.lib.listByName, {
+      name: "user.signup",
+    });
+    expect(checkpoints).toHaveLength(1);
   });
 });

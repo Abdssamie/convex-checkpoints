@@ -4,20 +4,20 @@ import { v } from "convex/values";
 import { ConvexCheckpoints } from "./index.js";
 import { components, initConvexTest } from "./setup.test.js";
 
-const events = new ConvexCheckpoints<{
+const checkpoints = new ConvexCheckpoints<{
   "post.created": { postId: string };
 }>(components.convexCheckpoints);
 
-events.on("post.created", async () => {});
+checkpoints.on("post.created", async () => {});
 
-export const { listByUser } = events.api();
+export const { listByUser } = checkpoints.api();
 export const submitPostCreated = mutationGeneric({
   args: {
     userId: v.string(),
     postId: v.string(),
   },
   handler: async (ctx, args) => {
-    return await events.submit(ctx, {
+    return await checkpoints.submit(ctx, {
       name: "post.created",
       userId: args.userId,
       payload: { postId: args.postId },
@@ -26,17 +26,17 @@ export const submitPostCreated = mutationGeneric({
 });
 
 const signupHandler = vi.fn();
-const idempotentEvents = new ConvexCheckpoints<{
+const idempotentCheckpoints = new ConvexCheckpoints<{
   "user.signup": { userId: string };
 }>(components.convexCheckpoints);
-idempotentEvents.on("user.signup", signupHandler);
+idempotentCheckpoints.on("user.signup", signupHandler);
 export const submitSignup = mutationGeneric({
   args: {
     userId: v.string(),
     idempotencyKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await idempotentEvents.submit(ctx, {
+    return await idempotentCheckpoints.submit(ctx, {
       name: "user.signup",
       userId: args.userId,
       payload: { userId: args.userId },
@@ -56,22 +56,24 @@ const testApi = (
 )["index.test"];
 
 function assertSubmitTypes(
-  ctx: Parameters<ConvexCheckpoints<{ "post.created": { postId: string } }>["submit"]>[0],
+  ctx: Parameters<
+    ConvexCheckpoints<{ "post.created": { postId: string } }>["submit"]
+  >[0],
 ) {
-  void events.submit(ctx, {
+  void checkpoints.submit(ctx, {
     name: "post.created",
     payload: { postId: "post1" },
   });
 
-  void events.submit(ctx, {
-    // @ts-expect-error event names must exist in the event registry
+  void checkpoints.submit(ctx, {
+    // @ts-expect-error checkpoint names must exist in the checkpoint registry
     name: "user.signup",
     payload: { postId: "post1" },
   });
 
-  void events.submit(ctx, {
+  void checkpoints.submit(ctx, {
     name: "post.created",
-    // @ts-expect-error payload must match the event name
+    // @ts-expect-error payload must match the checkpoint name
     payload: { userId: "user1" },
   });
 }
@@ -79,16 +81,18 @@ function assertSubmitTypes(
 void assertSubmitTypes;
 
 describe("client tests", () => {
-  test("exports submit and list functions from event definitions", async () => {
+  test("exports submit and list functions from checkpoint definitions", async () => {
     const t = initConvexTest();
     await t.mutation(testApi.submitPostCreated, {
       userId: "user1",
       postId: "post1",
     });
 
-    const eventsForUser = await t.query(testApi.listByUser, { userId: "user1" });
-    expect(eventsForUser).toHaveLength(1);
-    expect(eventsForUser[0].name).toBe("post.created");
+    const checkpointsForUser = await t.query(testApi.listByUser, {
+      userId: "user1",
+    });
+    expect(checkpointsForUser).toHaveLength(1);
+    expect(checkpointsForUser[0].name).toBe("post.created");
   });
 
   test("does not re-run handlers for duplicate idempotency keys", async () => {

@@ -1,3 +1,3 @@
-import { events } from "./example.js";
+import { checkpoints } from "./example.js";
 
-export default events.http("/events");
+export default checkpoints.http("/checkpoints");
