@@ -7,14 +7,15 @@ import { initConvexTest } from "./setup.test.js";
 describe("component lib", () => {
   test("stores submitted events in the audit log", async () => {
     const t = initConvexTest();
-    const eventId = await t.mutation(api.lib.record, {
+    const result = await t.mutation(api.lib.record, {
       name: "post.created",
       userId: "user1",
       payload: { postId: "post1" },
       occurredAt: 123,
     });
 
-    expect(eventId).toBeDefined();
+    expect(result.eventId).toBeDefined();
+    expect(result.created).toBe(true);
 
     const events = await t.query(api.lib.listByUser, { userId: "user1" });
     expect(events).toHaveLength(1);
@@ -24,31 +25,12 @@ describe("component lib", () => {
 
   test("deduplicates events by idempotency key", async () => {
     const t = initConvexTest();
-    const firstId = await t.mutation(api.lib.record, {
+    const first = await t.mutation(api.lib.record, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",
     });
-    const secondId = await t.mutation(api.lib.record, {
-      name: "user.signup",
-      userId: "user1",
-      idempotencyKey: "signup:user1",
-    });
-
-    expect(secondId).toBe(firstId);
-
-    const events = await t.query(api.lib.listByName, { name: "user.signup" });
-    expect(events).toHaveLength(1);
-  });
-
-  test("reports whether an idempotent event was newly created", async () => {
-    const t = initConvexTest();
-    const first = await t.mutation(api.lib.recordOnce, {
-      name: "user.signup",
-      userId: "user1",
-      idempotencyKey: "signup:user1",
-    });
-    const second = await t.mutation(api.lib.recordOnce, {
+    const second = await t.mutation(api.lib.record, {
       name: "user.signup",
       userId: "user1",
       idempotencyKey: "signup:user1",
@@ -59,5 +41,8 @@ describe("component lib", () => {
       eventId: first.eventId,
       created: false,
     });
+
+    const events = await t.query(api.lib.listByName, { name: "user.signup" });
+    expect(events).toHaveLength(1);
   });
 });

@@ -33,6 +33,26 @@ Define your event registry in app code and expose wrapper functions from your
 own app modules. That keeps auth, permission checks, and business rules close
 to the rest of your application code.
 
+Expose checkpoint submissions as Convex mutations by default. Mutations are the
+right fit when recording an event, updating Convex data, reading Convex data, or
+scheduling follow-up work from a handler.
+
+Use an action only when the submit path needs external, non-transactional work,
+such as calling a third-party API, sending an email directly, using Node APIs,
+or doing longer-running processing. For most integrations, keep the checkpoint
+submission in a mutation and schedule an internal action from the event handler:
+
+```ts
+checkpoints.on("user.signup", async (ctx, payload) => {
+  await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
+    userId: payload.userId,
+  });
+});
+```
+
+Actions are not database transactions, so design retries and idempotency
+explicitly when external systems are involved.
+
 ```ts
 // convex/checkpoints.ts
 import { components, internal } from "./_generated/api.js";

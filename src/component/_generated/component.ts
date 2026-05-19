@@ -82,19 +82,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           payload?: any;
           userId?: string;
         },
-        string,
-        Name
-      >;
-      recordOnce: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          idempotencyKey?: string;
-          name: string;
-          occurredAt?: number;
-          payload?: any;
-          userId?: string;
-        },
         { created: boolean; eventId: string },
         Name
       >;

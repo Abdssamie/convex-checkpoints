@@ -15,41 +15,6 @@ export const record = mutation({
     idempotencyKey: v.optional(v.string()),
     occurredAt: v.optional(v.number()),
   },
-  returns: v.id("events"),
-  handler: async (ctx, args) => {
-    if (args.idempotencyKey !== undefined) {
-      const existing = await ctx.db
-        .query("events")
-        .withIndex("by_idempotencyKey", (q) =>
-          q.eq("idempotencyKey", args.idempotencyKey),
-        )
-        .unique();
-
-      if (existing !== null) {
-        return existing._id;
-      }
-    }
-
-    const now = Date.now();
-    return await ctx.db.insert("events", {
-      name: args.name,
-      userId: args.userId,
-      payload: args.payload,
-      idempotencyKey: args.idempotencyKey,
-      occurredAt: args.occurredAt ?? now,
-      receivedAt: now,
-    });
-  },
-});
-
-export const recordOnce = mutation({
-  args: {
-    name: v.string(),
-    userId: v.optional(v.string()),
-    payload: v.optional(v.any()),
-    idempotencyKey: v.optional(v.string()),
-    occurredAt: v.optional(v.number()),
-  },
   returns: v.object({
     eventId: v.id("events"),
     created: v.boolean(),

@@ -16,23 +16,23 @@ type EventName<TEventRegistry extends EventRegistry> = Extract<
   string
 >;
 
-type SubmitArgs = {
-  name: string;
+type BaseSubmitArgs = {
   userId?: string;
-  payload?: unknown;
   idempotencyKey?: string;
   occurredAt?: number;
 };
 
-type TypedSubmitArgs<
+type UntypedSubmitArgs = BaseSubmitArgs & {
+  name: string;
+  payload?: unknown;
+};
+
+type SubmitArgs<
   TEventRegistry extends EventRegistry,
   TEvent extends EventName<TEventRegistry>,
-> = {
+> = BaseSubmitArgs & {
   name: TEvent;
   payload: TEventRegistry[TEvent];
-  userId?: string;
-  idempotencyKey?: string;
-  occurredAt?: number;
 };
 
 export class ConvexCheckpoints<
@@ -44,9 +44,9 @@ export class ConvexCheckpoints<
 
   public async submit<TEvent extends EventName<TEventRegistry>>(
     ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
-    args: TypedSubmitArgs<TEventRegistry, TEvent>,
+    args: SubmitArgs<TEventRegistry, TEvent>,
   ) {
-    const result = await ctx.runMutation(this.component.lib.recordOnce, args);
+    const result = await ctx.runMutation(this.component.lib.record, args);
     if (result.created) {
       await this.trigger(ctx, args.name, args.payload);
     }
@@ -87,7 +87,7 @@ export class ConvexCheckpoints<
           return json({ error: "invalid_event" }, 400);
         }
 
-        const result = await this.submitFromUntypedArgs(ctx, args);
+        const result = await this.submitFromArgs(ctx, args);
 
         return json({ eventId: result.eventId, created: result.created }, 202);
       }),
@@ -113,7 +113,7 @@ export class ConvexCheckpoints<
           return json({ error: "invalid_event" }, 400);
         }
 
-        const result = await this.submitFromUntypedArgs(ctx, args);
+        const result = await this.submitFromArgs(ctx, args);
 
         return json({ eventId: result.eventId, created: result.created }, 202);
       }),
@@ -126,11 +126,11 @@ export class ConvexCheckpoints<
     return http;
   }
 
-  private async submitFromUntypedArgs(
+  private async submitFromArgs(
     ctx: Parameters<ConvexCheckpoints<TEventRegistry>["trigger"]>[0],
-    args: SubmitArgs,
+    args: UntypedSubmitArgs,
   ) {
-    const result = await ctx.runMutation(this.component.lib.recordOnce, args);
+    const result = await ctx.runMutation(this.component.lib.record, args);
     if (result.created) {
       await this.trigger(
         ctx,
@@ -146,7 +146,7 @@ export type { EventHandler };
 
 async function readSubmitArgsFromBody(
   request: Request,
-): Promise<SubmitArgs | null> {
+): Promise<UntypedSubmitArgs | null> {
   const event = await readJsonObject(request);
   if (event === null || typeof event.name !== "string") {
     return null;
@@ -157,7 +157,7 @@ async function readSubmitArgsFromBody(
 async function readSubmitArgsFromPath(
   request: Request,
   name: string,
-): Promise<SubmitArgs | null> {
+): Promise<UntypedSubmitArgs | null> {
   const event = await readJsonObject(request);
   if (event === null) {
     return null;
@@ -170,7 +170,7 @@ function readSubmitArgs(
   name: string,
   event: Record<string, unknown>,
   payload: unknown,
-): SubmitArgs | null {
+): UntypedSubmitArgs | null {
   if (event.userId !== undefined && typeof event.userId !== "string") {
     return null;
   }
