@@ -1,3 +1,7 @@
 import { checkpoints } from "./example.js";
 
-export default checkpoints.http("/checkpoints");
+const checkpointsSecret = process.env.CHECKPOINTS_SECRET ?? "checkpoint-secret";
+
+export default checkpoints.http("/checkpoints", {
+  token: checkpointsSecret,
+});

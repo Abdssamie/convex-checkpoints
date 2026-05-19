@@ -34,6 +34,7 @@ describe("example", () => {
 
     const response = await t.fetch("/checkpoints/post.created", {
       method: "POST",
+      headers: { authorization: "Bearer checkpoint-secret" },
       body: JSON.stringify({
         userId: "user1",
         postId: "post1",
@@ -55,11 +56,44 @@ describe("example", () => {
     });
   });
 
+  test("rejects HTTP checkpoints without authorization", async () => {
+    const t = initConvexTest();
+
+    const response = await t.fetch("/checkpoints/post.created", {
+      method: "POST",
+      body: JSON.stringify({
+        userId: "user1",
+        postId: "post1",
+      }),
+    });
+
+    expect(response.status).toBe(401);
+
+    const checkpoints = await t.query(api.example.listByUser, {
+      userId: "user1",
+    });
+    expect(checkpoints).toHaveLength(0);
+  });
+
+  test("allows Authorization header in HTTP checkpoint preflight", async () => {
+    const t = initConvexTest();
+
+    const response = await t.fetch("/checkpoints/post.created", {
+      method: "OPTIONS",
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-headers")).toContain(
+      "Authorization",
+    );
+  });
+
   test("submits HTTP checkpoints without registered handlers", async () => {
     const t = initConvexTest();
 
     const response = await t.fetch("/checkpoints/user.signup", {
       method: "POST",
+      headers: { authorization: "Bearer checkpoint-secret" },
       body: JSON.stringify({
         userId: "user1",
       }),

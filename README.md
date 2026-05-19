@@ -54,6 +54,10 @@ checkpoints.on("user.signup", async (ctx, payload) => {
 Actions are not database transactions, so design retries and idempotency
 explicitly when external systems are involved.
 
+The registry gives you typed checkpoint names and payloads while writing
+handlers and submit calls. Your exported Convex functions are still the runtime
+boundary where you validate input and enforce permissions.
+
 ```ts
 // convex/checkpoints.ts
 import { components, internal } from "./_generated/api.js";
@@ -144,34 +148,48 @@ checkpoint ID and skip handler re-execution.
 
 ## HTTP
 
-Expose an HTTP route from your app when you need checkpoint ingestion over HTTP:
+Prefer mutation wrappers for app-driven checkpoints. They run inside your app's
+Convex functions, so you can authenticate the user, validate the input, write
+app data, and submit the checkpoint in one place.
+
+HTTP ingestion is for server-to-server entry points such as webhooks or trusted
+backend jobs. Treat it as a public endpoint: anyone who can reach the URL can
+try to submit a checkpoint unless you verify the request.
 
 ```ts
 // convex/http.ts
 import { checkpoints } from "./checkpoints.js";
 
-export default checkpoints.http("/checkpoints");
+export default checkpoints.http("/checkpoints", {
+  token: process.env.CHECKPOINTS_SECRET,
+});
 ```
+
+Requests must include `Authorization: Bearer <token>`. Keep
+`CHECKPOINTS_SECRET` in server-side environment variables only. If the token
+option is configured but the environment variable is missing or empty, HTTP
+checkpoint submissions are rejected.
 
 This registers both `POST /checkpoints` and checkpoint-specific routes such as
 `POST /checkpoints/post.created`.
 
-For checkpoint-specific routes, the request body is used as the checkpoint
-payload:
+For checkpoint-specific routes, the route selects the checkpoint name and the
+request body becomes the payload:
 
 ```sh
 curl -X POST "$CONVEX_SITE_URL/checkpoints/post.created" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $CHECKPOINTS_SECRET" \
   -d '{"userId":"user1","postId":"post1"}'
 ```
 
-`POST /checkpoints` still accepts JSON with `name`, optional `userId`, optional
-`payload`, optional `idempotencyKey`, and optional `reachedAt`.
+For webhook providers, verify the provider's signature in `authorize`. The
+request is cloned before authorization runs, so signature checks can read the
+body without preventing checkpoint parsing afterward.
 
-TypeScript checks payload types for `checkpoints.on(...)`,
-`checkpoints.trigger(...)`, and `checkpoints.submit(ctx, ...)` inside Convex
-code. Public Convex mutations and HTTP requests still need app-defined runtime
-validators because TypeScript types are not available at runtime.
+Do not put a checkpoint HTTP secret in browser code. If a user action in your
+app should submit a checkpoint, expose a Convex mutation instead and call
+`checkpoints.submit(ctx, ...)` from that mutation.
 
 ## Tests
 

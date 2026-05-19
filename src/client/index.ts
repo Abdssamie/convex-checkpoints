@@ -31,6 +31,11 @@ type SubmitArgs<
   payload: TCheckpointRegistry[TCheckpoint];
 };
 
+type HttpOptions = {
+  token?: string;
+  authorize?: (request: Request) => boolean | Promise<boolean>;
+};
+
 export class ConvexCheckpoints<
   TCheckpointRegistry extends CheckpointRegistry,
 > extends CheckpointDispatcher<TCheckpointRegistry> {
@@ -72,12 +77,16 @@ export class ConvexCheckpoints<
     };
   }
 
-  public http(path = "/checkpoints") {
+  public http(path = "/checkpoints", options: HttpOptions = {}) {
     const http = httpRouter();
     http.route({
       path,
       method: "POST",
       handler: httpActionGeneric(async (ctx, request) => {
+        if (!(await isAuthorized(request, options))) {
+          return json({ error: "unauthorized" }, 401);
+        }
+
         const args = await readSubmitArgsFromBody(request);
         if (args === null) {
           return json({ error: "invalid_checkpoint" }, 400);
@@ -102,6 +111,10 @@ export class ConvexCheckpoints<
       pathPrefix,
       method: "POST",
       handler: httpActionGeneric(async (ctx, request) => {
+        if (!(await isAuthorized(request, options))) {
+          return json({ error: "unauthorized" }, 401);
+        }
+
         const checkpointName = readCheckpointNameFromPath(request, pathPrefix);
         if (checkpointName === null) {
           return json({ error: "invalid_checkpoint_path" }, 400);
@@ -145,6 +158,23 @@ export class ConvexCheckpoints<
 }
 
 export type { CheckpointHandler };
+
+async function isAuthorized(request: Request, options: HttpOptions) {
+  if ("token" in options) {
+    if (typeof options.token !== "string" || options.token.length === 0) {
+      return false;
+    }
+    const authorization = request.headers.get("authorization");
+    if (authorization !== `Bearer ${options.token}`) {
+      return false;
+    }
+  }
+
+  if (options.authorize === undefined) {
+    return true;
+  }
+  return await options.authorize(request.clone());
+}
 
 async function readSubmitArgsFromBody(
   request: Request,
@@ -259,6 +289,6 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }

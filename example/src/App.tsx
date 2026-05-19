@@ -68,6 +68,8 @@ function App() {
     const convexUrl = import.meta.env.VITE_CONVEX_URL ?? "";
     return convexUrl.replace(".convex.cloud", ".convex.site");
   }, []);
+  const checkpointsSecret =
+    import.meta.env.VITE_CHECKPOINTS_SECRET ?? "checkpoint-secret";
 
   const selectedScenario = scenarios.find((item) => item.name === selected)!;
 
@@ -90,7 +92,10 @@ function App() {
       if (transport === "http") {
         const response = await fetch(`${siteUrl}/checkpoints/${name}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${checkpointsSecret}`,
+          },
           body: JSON.stringify({
             ...payload,
             idempotencyKey: idempotencyKey || undefined,
