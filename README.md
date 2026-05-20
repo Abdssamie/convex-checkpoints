@@ -29,34 +29,7 @@ export default app;
 
 ## Usage
 
-Define your checkpoint registry in app code and expose wrapper functions from
-your own app modules. That keeps auth, permission checks, and business rules
-close to the rest of your application code.
-
-Expose checkpoint submissions as Convex mutations by default. Mutations are the
-right fit when recording a checkpoint, updating Convex data, reading Convex
-data, or scheduling follow-up work from a handler.
-
-Use an action only when the submit path needs external, non-transactional work,
-such as calling a third-party API, sending an email directly, using Node APIs,
-or doing longer-running processing. For most integrations, keep the checkpoint
-submission in a mutation and schedule an internal action from the checkpoint
-handler:
-
-```ts
-checkpoints.on("user.signup", async (ctx, payload) => {
-  await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
-    userId: payload.userId,
-  });
-});
-```
-
-Actions are not database transactions, so design retries and idempotency
-explicitly when external systems are involved.
-
-The registry gives you typed checkpoint names and payloads while writing
-handlers and submit calls. Your exported Convex functions are still the runtime
-boundary where you validate input and enforce permissions.
+There are two steps: define your checkpoint registry with handlers, then expose submit mutations for your app to call.
 
 ```ts
 // convex/checkpoints.ts
@@ -66,10 +39,11 @@ import { v } from "convex/values";
 import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
 
 export const checkpoints = new ConvexCheckpoints<{
-  "user.signup": { userId: string };
+  "user.signup": { userId: string; email: string };
   "post.created": { userId: string; postId: string; title: string };
 }>(components.convexCheckpoints);
 
+// Handlers run when a checkpoint is first recorded (deduplicated by idempotencyKey)
 checkpoints.on("user.signup", async (ctx, payload) => {
   await ctx.scheduler.runAfter(30 * 60 * 1000, internal.emails.welcome, {
     userId: payload.userId,
@@ -89,6 +63,7 @@ checkpoints.on("post.created", async (ctx, payload) => {
   }
 });
 
+// Submit mutations — called from your app code
 export const submitPostCreated = mutation({
   args: {
     userId: v.string(),
