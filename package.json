@@ -1,12 +1,15 @@
 {
   "name": "@abdssamie/convex-checkpoints",
   "description": "A Convex component for event-driven user checkpoints.",
-  "repository": "github:abdssamie/convex-checkpoints",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abdssamie/convex-checkpoints.git"
+  },
   "homepage": "https://github.com/abdssamie/convex-checkpoints#readme",
   "bugs": {
     "url": "https://github.com/abdssamie/convex-checkpoints/issues"
   },
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "Apache-2.0",
   "keywords": [
     "convex",
