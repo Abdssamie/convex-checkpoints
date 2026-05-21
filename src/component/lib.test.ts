@@ -91,4 +91,21 @@ describe("component lib", () => {
     expect(rules).toHaveLength(1);
     expect(rules[0].threshold).toBe(2);
   });
+
+  test("enforces user rate limit", async () => {
+    const t = initConvexTest();
+    for (let i = 0; i < 60; i++) {
+      await t.mutation(api.lib.trackEvent, {
+        userId: "limited_user",
+        factor: "some_factor",
+      });
+    }
+
+    await expect(
+      t.mutation(api.lib.trackEvent, {
+        userId: "limited_user",
+        factor: "some_factor",
+      })
+    ).rejects.toThrow("Rate limit exceeded for this user");
+  });
 });

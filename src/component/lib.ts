@@ -81,6 +81,62 @@ export const trackEvent = mutation({
     }
 
     const now = Date.now();
+    const LIMIT_PER_USER = 60;
+    const LIMIT_GLOBAL = 500;
+    const WINDOW_MS = 60 * 1000;
+
+    // Check user limit
+    const userRateKey = `user:${args.userId}`;
+    const userLimit = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_key", (q) => q.eq("key", userRateKey))
+      .unique();
+
+    if (userLimit === null) {
+      await ctx.db.insert("rateLimits", {
+        key: userRateKey,
+        count: 1,
+        resetAt: now + WINDOW_MS,
+      });
+    } else if (now > userLimit.resetAt) {
+      await ctx.db.patch("rateLimits", userLimit._id, {
+        count: 1,
+        resetAt: now + WINDOW_MS,
+      });
+    } else if (userLimit.count >= LIMIT_PER_USER) {
+      throw new Error("Rate limit exceeded for this user. Please try again later.");
+    } else {
+      await ctx.db.patch("rateLimits", userLimit._id, {
+        count: userLimit.count + 1,
+      });
+    }
+
+    // Check global limit
+    const globalRateKey = "global";
+    const globalLimit = await ctx.db
+      .query("rateLimits")
+      .withIndex("by_key", (q) => q.eq("key", globalRateKey))
+      .unique();
+
+    if (globalLimit === null) {
+      await ctx.db.insert("rateLimits", {
+        key: globalRateKey,
+        count: 1,
+        resetAt: now + WINDOW_MS,
+      });
+    } else if (now > globalLimit.resetAt) {
+      await ctx.db.patch("rateLimits", globalLimit._id, {
+        count: 1,
+        resetAt: now + WINDOW_MS,
+      });
+    } else if (globalLimit.count >= LIMIT_GLOBAL) {
+      throw new Error("Global rate limit exceeded. Please try again later.");
+    } else {
+      await ctx.db.patch("rateLimits", globalLimit._id, {
+        count: globalLimit.count + 1,
+      });
+    }
+
     const existingProgress = await ctx.db
       .query("progress")
       .withIndex("by_userId_and_factor", (q) =>
