@@ -326,6 +326,123 @@ time {
   font-weight: 800;
 }
 
+/* Hero banner explaining the premise */
+.heroBanner {
+  margin: 0 auto 22px;
+  max-width: 1480px;
+  padding: 24px;
+  border: 2px solid #1d2a25;
+  background: #d2ef62; /* Lime green neo-brutal accent */
+  box-shadow: 6px 6px 0 #1d2a25;
+}
+
+.heroBanner p {
+  color: #1d2a25;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 800;
+}
+
+.heroBanner code {
+  background: rgba(255, 252, 244, 0.6);
+  padding: 2px 6px;
+  border: 1px solid #1d2a25;
+  border-radius: 2px;
+  font-size: 14px;
+}
+
+/* Rules list styling */
+.rulesList {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  max-height: 680px;
+  overflow: auto;
+}
+
+.ruleRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid #1d2a25;
+  background: #fffaf0;
+  box-shadow: 4px 4px 0 #1d2a25;
+}
+
+.ruleRowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ruleRowHeader strong {
+  font-size: 15px;
+  color: #1d2a25;
+  word-break: break-all;
+}
+
+.ruleFormula {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.formulaPart {
+  padding: 4px 8px;
+  border: 1px solid #1d2a25;
+  border-radius: 2px;
+}
+
+.formulaPart.when {
+  background: #eee6d7;
+}
+
+.formulaPart.then {
+  background: #f26f4b;
+  color: #fff;
+}
+
+/* Progress trackers */
+.progressTracker {
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.progressTrackerHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-weight: 800;
+  color: #4e5b53;
+}
+
+.progressBarContainer {
+  height: 12px;
+  border: 2px solid #1d2a25;
+  background: #fffaf0;
+}
+
+.progressBar {
+  height: 100%;
+  background: #f26f4b; /* default active orange */
+  transition: width 0.3s ease;
+}
+
+.progressBar.completed {
+  background: #d2ef62; /* completed lime green */
+}
+
+.workspaceColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
 @media (max-width: 1120px) {
   .workspace {
     grid-template-columns: 1fr;

@@ -4,6 +4,8 @@ import { convexTest } from "convex-test";
 import schema from "./schema.js";
 import component from "@abdssamie/convex-checkpoints/test";
 
+process.env.CHECKPOINTS_SECRET = "checkpoint-secret";
+
 const modules = import.meta.glob("./**/*.*s");
 // When users want to write tests that use your component, they need to
 // explicitly register it with its schema and modules.

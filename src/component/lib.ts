@@ -179,3 +179,20 @@ export const listProgressForUser = query({
     return progress;
   },
 });
+
+export const resetProgress = mutation({
+  args: {
+    userId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const rows = ctx.db
+      .query("progress")
+      .withIndex("by_userId_and_factor", (q) => q.eq("userId", args.userId));
+    for await (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    return null;
+  },
+});
+

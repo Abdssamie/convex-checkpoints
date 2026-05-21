@@ -5,3 +5,5 @@ pages_build_output_dir = "dist"
 [vars]
 VITE_CONVEX_URL = "https://adorable-bison-815.eu-west-1.convex.cloud"
 VITE_CONVEX_SITE_URL = "https://adorable-bison-815.eu-west-1.convex.site"
+VITE_CHECKPOINTS_SECRET = "checkpoint-secret"
+

@@ -75,6 +75,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         { created: boolean; ruleId: string },
         Name
       >;
+      resetProgress: FunctionReference<
+        "mutation",
+        "internal",
+        { userId: string },
+        null,
+        Name
+      >;
       trackEvent: FunctionReference<
         "mutation",
         "internal",

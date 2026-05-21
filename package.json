@@ -32,6 +32,8 @@
     "test:watch": "vitest --typecheck --clearScreen false",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
+    "deploy:frontend": "cd example && npx vite build --mode production && npx wrangler pages deploy --commit-dirty=true",
+    "deploy:frontend:preview": "cd example && npx vite build --mode production && npx wrangler pages deploy --branch preview --commit-dirty=true",
     "preversion": "npm ci && npm run build:clean && npm run test && npm run lint && npm run typecheck",
     "alpha": "npm version prerelease --preid alpha && npm publish --tag alpha && git push --follow-tags",
     "release": "npm version patch && npm publish && git push --follow-tags",

@@ -111,6 +111,29 @@ export const submitProfileCompleted = mutation({
   },
 });
 
+export const trackEventAndSideEffects = internalMutation({
+  args: {
+    userId: v.string(),
+    factor: v.string(),
+    payload: v.optional(v.any()),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    await registerDefaultRules(ctx);
+    if (args.factor === "create_post") {
+      await ctx.runMutation(internal.example.incrementPosts, {
+        userId: args.userId,
+      });
+    }
+    const result = await checkpoints.trackEvent(ctx, {
+      userId: args.userId,
+      factor: args.factor,
+      payload: args.payload,
+    });
+    return result.progressId;
+  },
+});
+
 export const listDebugActions = query({
   args: {
     userId: v.optional(v.string()),
@@ -186,6 +209,8 @@ export const resetDebug = mutation({
     if (stats !== null) {
       await ctx.db.delete("userStats", stats._id);
     }
+
+    await checkpoints.resetProgress(ctx, { userId });
     return null;
   },
 });

@@ -91,6 +91,16 @@ export class ConvexCheckpoints<
     return result;
   }
 
+  public async resetProgress(
+    ctx: GenericMutationCtx<TDataModel>,
+    args: { userId: string },
+  ) {
+    return await ctx.runMutation(this.component.lib.resetProgress, {
+      userId: args.userId,
+    });
+  }
+
+
   public api() {
     return {
       listRules: queryGeneric({

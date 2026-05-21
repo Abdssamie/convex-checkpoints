@@ -142,4 +142,29 @@ describe("example", () => {
       "credits_awarded",
     );
   });
+
+  test("resets debug state and progress", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.example.configureRules, {});
+    await t.mutation(api.example.submitPostCreated, {
+      userId: "user1",
+      postId: "post1",
+      title: "Test post",
+    });
+
+    let progress = await t.query(api.example.getProgress, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    expect(progress?.value).toBe(1);
+
+    await t.mutation(api.example.resetDebug, { userId: "user1" });
+
+    progress = await t.query(api.example.getProgress, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    expect(progress).toBeNull();
+  });
 });
