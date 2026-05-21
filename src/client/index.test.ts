@@ -1,48 +1,33 @@
 import { describe, expect, test, vi } from "vitest";
-import { anyApi, mutationGeneric, type ApiFromModules } from "convex/server";
+import { anyApi, type ApiFromModules } from "convex/server";
 import { v } from "convex/values";
 import { ConvexCheckpoints } from "./index.js";
 import { components, initConvexTest } from "./setup.test.js";
 
 const checkpoints = new ConvexCheckpoints<{
-  "post.created": { postId: string };
+  "post.created": { userId: string; postId: string };
 }>(components.convexCheckpoints);
 
-checkpoints.on("post.created", async () => {});
-
 export const { listByUser } = checkpoints.api();
-export const submitPostCreated = mutationGeneric({
+const postCreatedHandler = vi.fn();
+export const submitPostCreated = checkpoints.mutation("post.created", {
   args: {
     userId: v.string(),
     postId: v.string(),
   },
-  handler: async (ctx, args) => {
-    return await checkpoints.submit(ctx, {
-      name: "post.created",
-      userId: args.userId,
-      payload: { postId: args.postId },
-    });
-  },
+  handler: postCreatedHandler,
 });
 
 const signupHandler = vi.fn();
 const idempotentCheckpoints = new ConvexCheckpoints<{
   "user.signup": { userId: string };
 }>(components.convexCheckpoints);
-idempotentCheckpoints.on("user.signup", signupHandler);
-export const submitSignup = mutationGeneric({
+export const submitSignup = idempotentCheckpoints.mutation("user.signup", {
   args: {
     userId: v.string(),
     idempotencyKey: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    return await idempotentCheckpoints.submit(ctx, {
-      name: "user.signup",
-      userId: args.userId,
-      payload: { userId: args.userId },
-      idempotencyKey: args.idempotencyKey,
-    });
-  },
+  handler: signupHandler,
 });
 
 const testApi = (
@@ -57,18 +42,18 @@ const testApi = (
 
 function assertSubmitTypes(
   ctx: Parameters<
-    ConvexCheckpoints<{ "post.created": { postId: string } }>["submit"]
+    ConvexCheckpoints<{ "post.created": { userId: string; postId: string } }>["submit"]
   >[0],
 ) {
   void checkpoints.submit(ctx, {
     name: "post.created",
-    payload: { postId: "post1" },
+    payload: { userId: "user1", postId: "post1" },
   });
 
   void checkpoints.submit(ctx, {
     // @ts-expect-error checkpoint names must exist in the checkpoint registry
     name: "user.signup",
-    payload: { postId: "post1" },
+    payload: { userId: "user1", postId: "post1" },
   });
 
   void checkpoints.submit(ctx, {
@@ -78,12 +63,41 @@ function assertSubmitTypes(
   });
 }
 
+checkpoints.mutation("post.created", {
+  args: {
+    userId: v.string(),
+    postId: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    args.userId satisfies string;
+    args.postId satisfies string;
+  },
+});
+
+checkpoints.mutation("post.created", {
+  args: {
+    userId: v.string(),
+    postId: v.string(),
+  },
+  // @ts-expect-error checkpoint mutation args are inferred from validators
+  handler: async (_ctx, args: { userId: number }) => {
+    void args;
+  },
+});
+
 void assertSubmitTypes;
 
 describe("client tests", () => {
   test("exports submit and list functions from checkpoint definitions", async () => {
+    postCreatedHandler.mockClear();
     const t = initConvexTest();
     await t.mutation(testApi.submitPostCreated, {
+      userId: "user1",
+      postId: "post1",
+    });
+
+    expect(postCreatedHandler).toHaveBeenCalledOnce();
+    expect(postCreatedHandler.mock.calls[0][1]).toMatchObject({
       userId: "user1",
       postId: "post1",
     });

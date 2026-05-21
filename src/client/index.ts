@@ -1,5 +1,14 @@
-import { httpActionGeneric, httpRouter, queryGeneric } from "convex/server";
-import { v } from "convex/values";
+import {
+  actionGeneric,
+  httpActionGeneric,
+  httpRouter,
+  mutationGeneric,
+  queryGeneric,
+  type GenericActionCtx,
+  type GenericDataModel,
+  type GenericMutationCtx,
+} from "convex/server";
+import { v, type ObjectType, type PropertyValidators } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
 import {
   ConvexCheckpoints as CheckpointDispatcher,
@@ -36,22 +45,99 @@ type HttpOptions = {
   authorize?: (request: Request) => boolean | Promise<boolean>;
 };
 
+type CheckpointMeta<
+  TCheckpointRegistry extends CheckpointRegistry,
+  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+> = {
+  checkpoint: TCheckpoint;
+  checkpointId: string;
+};
+
+type CheckpointDefinition<
+  TCheckpointRegistry extends CheckpointRegistry,
+  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+  TArgsValidator extends PropertyValidators,
+  TCtx,
+> = {
+  args: TArgsValidator;
+  handler: (
+    ctx: TCtx,
+    args: ObjectType<TArgsValidator>,
+    meta: CheckpointMeta<TCheckpointRegistry, TCheckpoint>,
+  ) => Promise<void> | void;
+  payload?: (
+    args: ObjectType<TArgsValidator>,
+  ) => TCheckpointRegistry[TCheckpoint];
+  userId?: (args: ObjectType<TArgsValidator>) => string | undefined;
+  idempotencyKey?: (args: ObjectType<TArgsValidator>) => string | undefined;
+  reachedAt?: (args: ObjectType<TArgsValidator>) => number | undefined;
+};
+
 export class ConvexCheckpoints<
   TCheckpointRegistry extends CheckpointRegistry,
-> extends CheckpointDispatcher<TCheckpointRegistry> {
+  TDataModel extends GenericDataModel = GenericDataModel,
+> extends CheckpointDispatcher<TCheckpointRegistry, TDataModel> {
   constructor(private component: ComponentApi) {
     super();
   }
 
   public async submit<TCheckpoint extends CheckpointName<TCheckpointRegistry>>(
-    ctx: Parameters<ConvexCheckpoints<TCheckpointRegistry>["trigger"]>[0],
+    ctx: GenericMutationCtx<TDataModel>,
     args: SubmitArgs<TCheckpointRegistry, TCheckpoint>,
   ) {
     const result = await ctx.runMutation(this.component.lib.record, args);
     if (result.created) {
-      await this.trigger(ctx, args.name, args.payload);
+      await this.triggerMutation(ctx, args.name, args.payload);
     }
     return result.checkpointId;
+  }
+
+  public mutation<
+    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+    TArgsValidator extends PropertyValidators,
+  >(
+    checkpoint: TCheckpoint,
+    definition: CheckpointDefinition<
+      TCheckpointRegistry,
+      TCheckpoint,
+      TArgsValidator,
+      GenericMutationCtx<TDataModel>
+    >,
+  ) {
+    return mutationGeneric({
+      args: definition.args,
+      returns: v.string(),
+      handler: async (
+        ctx: GenericMutationCtx<TDataModel>,
+        args: ObjectType<TArgsValidator>,
+      ) => {
+        return await this.recordAndRunMutation(ctx, checkpoint, args, definition);
+      },
+    });
+  }
+
+  public action<
+    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+    TArgsValidator extends PropertyValidators,
+  >(
+    checkpoint: TCheckpoint,
+    definition: CheckpointDefinition<
+      TCheckpointRegistry,
+      TCheckpoint,
+      TArgsValidator,
+      GenericActionCtx<TDataModel>
+    >,
+  ) {
+    return actionGeneric({
+      args: definition.args,
+      returns: v.string(),
+      handler: async (
+        ctx: GenericActionCtx<TDataModel>,
+        args: ObjectType<TArgsValidator>,
+      ) => {
+        return await this.recordAndRunAction(ctx, checkpoint, args, definition);
+      },
+    });
   }
 
   public api() {
@@ -142,22 +228,121 @@ export class ConvexCheckpoints<
   }
 
   private async submitFromArgs(
-    ctx: Parameters<ConvexCheckpoints<TCheckpointRegistry>["trigger"]>[0],
+    ctx: GenericActionCtx<GenericDataModel>,
     args: UntypedSubmitArgs,
   ) {
-    const result = await ctx.runMutation(this.component.lib.record, args);
+    return await ctx.runMutation(this.component.lib.record, args);
+  }
+
+  private async recordAndRunMutation<
+    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+    TArgsValidator extends PropertyValidators,
+  >(
+    ctx: GenericMutationCtx<TDataModel>,
+    checkpoint: TCheckpoint,
+    args: ObjectType<TArgsValidator>,
+    definition: CheckpointDefinition<
+      TCheckpointRegistry,
+      TCheckpoint,
+      TArgsValidator,
+      GenericMutationCtx<TDataModel>
+    >,
+  ) {
+    const result = await ctx.runMutation(
+      this.component.lib.record,
+      buildRecordArgs(checkpoint, args, definition),
+    );
+
     if (result.created) {
-      await this.trigger(
-        ctx,
-        args.name as CheckpointName<TCheckpointRegistry>,
-        args.payload as TCheckpointRegistry[CheckpointName<TCheckpointRegistry>],
-      );
+      await definition.handler(ctx, args, {
+        checkpoint,
+        checkpointId: result.checkpointId,
+      });
     }
-    return result;
+
+    return result.checkpointId;
+  }
+
+  private async recordAndRunAction<
+    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+    TArgsValidator extends PropertyValidators,
+  >(
+    ctx: GenericActionCtx<TDataModel>,
+    checkpoint: TCheckpoint,
+    args: ObjectType<TArgsValidator>,
+    definition: CheckpointDefinition<
+      TCheckpointRegistry,
+      TCheckpoint,
+      TArgsValidator,
+      GenericActionCtx<TDataModel>
+    >,
+  ) {
+    const result = await ctx.runMutation(
+      this.component.lib.record,
+      buildRecordArgs(checkpoint, args, definition),
+    );
+
+    if (result.created) {
+      await definition.handler(ctx, args, {
+        checkpoint,
+        checkpointId: result.checkpointId,
+      });
+    }
+
+    return result.checkpointId;
   }
 }
 
 export type { CheckpointHandler };
+
+function buildRecordArgs<
+  TCheckpointRegistry extends CheckpointRegistry,
+  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
+  TArgsValidator extends PropertyValidators,
+  TCtx,
+>(
+  name: TCheckpoint,
+  args: ObjectType<TArgsValidator>,
+  definition: CheckpointDefinition<
+    TCheckpointRegistry,
+    TCheckpoint,
+    TArgsValidator,
+    TCtx
+  >,
+): UntypedSubmitArgs {
+  return {
+    name,
+    userId:
+      definition.userId?.(args) ??
+      readStringField(args, "userId"),
+    payload:
+      definition.payload?.(args) ??
+      defaultPayload(args),
+    idempotencyKey:
+      definition.idempotencyKey?.(args) ??
+      readStringField(args, "idempotencyKey"),
+    reachedAt:
+      definition.reachedAt?.(args) ??
+      readNumberField(args, "reachedAt"),
+  };
+}
+
+function defaultPayload<TArgs extends Record<string, unknown>>(args: TArgs) {
+  const payload = { ...args };
+  delete payload.idempotencyKey;
+  delete payload.reachedAt;
+  return payload;
+}
+
+function readStringField(args: Record<string, unknown>, field: string) {
+  const value = args[field];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readNumberField(args: Record<string, unknown>, field: string) {
+  const value = args[field];
+  return typeof value === "number" ? value : undefined;
+}
 
 async function isAuthorized(request: Request, options: HttpOptions) {
   if ("token" in options) {
@@ -241,11 +426,15 @@ async function readJsonObject(
     return null;
   }
 
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+  if (!isRecord(body)) {
     return null;
   }
 
-  return body as Record<string, unknown>;
+  return body;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readCheckpointNameFromPath(request: Request, pathPrefix: string) {

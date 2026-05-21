@@ -34,7 +34,6 @@ There are two steps: define your checkpoint registry with handlers, then expose 
 ```ts
 // convex/checkpoints.ts
 import { components, internal } from "./_generated/api.js";
-import { mutation } from "./_generated/server.js";
 import { v } from "convex/values";
 import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
 
@@ -43,46 +42,38 @@ export const checkpoints = new ConvexCheckpoints<{
   "post.created": { userId: string; postId: string; title: string };
 }>(components.convexCheckpoints);
 
-// Handlers run when a checkpoint is first recorded (deduplicated by idempotencyKey)
-checkpoints.on("user.signup", async (ctx, payload) => {
-  await ctx.scheduler.runAfter(30 * 60 * 1000, internal.emails.welcome, {
-    userId: payload.userId,
-  });
-});
-
-checkpoints.on("post.created", async (ctx, payload) => {
-  const count = await ctx.runQuery(internal.posts.countByUser, {
-    userId: payload.userId,
-  });
-
-  if (count === 5) {
-    await ctx.runMutation(internal.credits.add, {
-      userId: payload.userId,
-      amount: 100,
+// The handler runs only when this checkpoint is first recorded.
+export const submitSignup = checkpoints.mutation("user.signup", {
+  args: {
+    userId: v.string(),
+    email: v.string(),
+    idempotencyKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(30 * 60 * 1000, internal.emails.welcome, {
+      userId: args.userId,
     });
-  }
+  },
 });
 
-// Submit mutations — called from your app code
-export const submitPostCreated = mutation({
+export const submitPostCreated = checkpoints.mutation("post.created", {
   args: {
     userId: v.string(),
     postId: v.string(),
     title: v.string(),
     idempotencyKey: v.optional(v.string()),
   },
-  returns: v.string(),
   handler: async (ctx, args) => {
-    return await checkpoints.submit(ctx, {
-      name: "post.created",
+    const count = await ctx.runQuery(internal.posts.countByUser, {
       userId: args.userId,
-      payload: {
-        userId: args.userId,
-        postId: args.postId,
-        title: args.title,
-      },
-      idempotencyKey: args.idempotencyKey,
     });
+
+    if (count === 5) {
+      await ctx.runMutation(internal.credits.add, {
+        userId: args.userId,
+        amount: 100,
+      });
+    }
   },
 });
 
