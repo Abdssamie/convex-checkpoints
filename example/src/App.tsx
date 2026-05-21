@@ -205,13 +205,6 @@ function App() {
           <p className="eyebrow">Convex Checkpoints Debugger</p>
           <h1>Checkpoint flow workbench</h1>
         </div>
-        <button
-          className="button ghost"
-          onClick={() => resetDebug({ userId })}
-          disabled={busy}
-        >
-          Reset Debug
-        </button>
       </header>
 
       <section className="metrics">
@@ -270,6 +263,9 @@ function App() {
                   onChange={(e) => setAuthToken(e.target.value)}
                   placeholder="Bearer token"
                 />
+                <p className="fieldHelp">
+                  Demo purposes only. Secrets should not be exposed or managed on the client side in real production applications.
+                </p>
               </label>
             </>
           )}
@@ -331,9 +327,25 @@ function App() {
         <div className="panel">
           <div className="panelHeader">
             <h2>Checkpoint Rules</h2>
-            <span>
-              {rules === undefined ? "loading" : `${rules.length} rules`}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <button
+                className="button ghost"
+                style={{
+                  height: "30px",
+                  minHeight: "30px",
+                  padding: "0 10px",
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                }}
+                onClick={() => resetDebug({ userId })}
+                disabled={busy}
+              >
+                Reset Debug
+              </button>
+              <span>
+                {rules === undefined ? "loading" : `${rules.length} rules`}
+              </span>
+            </div>
           </div>
           <div className="rulesList" style={{ maxHeight: "600px" }}>
             {rules?.map((rule: RuleItem) => {

@@ -210,6 +210,14 @@ pre {
   text-transform: uppercase;
 }
 
+.fieldHelp {
+  margin-top: 2px;
+  color: #7a3e3e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 select,
 input,
 textarea {
