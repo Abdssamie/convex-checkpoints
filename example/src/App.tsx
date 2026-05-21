@@ -120,7 +120,9 @@ function App() {
       let errorJson;
       try {
         errorJson = JSON.parse(errorText);
-      } catch {}
+      } catch {
+        // ignore JSON parse errors, fallback to text
+      }
       const errMsg = errorJson?.error || errorText || response.statusText;
       throw new Error(`HTTP ${response.status}: ${errMsg}`);
     }

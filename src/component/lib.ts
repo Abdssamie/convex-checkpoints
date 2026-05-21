@@ -246,7 +246,7 @@ export const resetProgress = mutation({
       .query("progress")
       .withIndex("by_userId_and_factor", (q) => q.eq("userId", args.userId));
     for await (const row of rows) {
-      await ctx.db.delete(row._id);
+      await ctx.db.delete("progress", row._id);
     }
     return null;
   },
