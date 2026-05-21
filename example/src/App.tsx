@@ -7,7 +7,7 @@ const userId = "demo-user";
 
 const scenarios = [
   {
-    name: "user.signup",
+    name: "signup",
     label: "Signup",
     payload: () => ({
       userId,
@@ -16,7 +16,7 @@ const scenarios = [
     }),
   },
   {
-    name: "post.created",
+    name: "create_post",
     label: "Create Post",
     payload: () => ({
       userId,
@@ -25,24 +25,22 @@ const scenarios = [
     }),
   },
   {
-    name: "profile.completed",
+    name: "profile_completed",
     label: "Complete Profile",
     payload: () => ({
       userId,
       fields: ["name", "avatar", "timezone", "bio"],
     }),
   },
-  {
-    name: "billing.upgraded",
-    label: "Upgrade Plan",
-    payload: () => ({
-      userId,
-      plan: "team",
-    }),
-  },
 ] as const;
 
 type ScenarioName = (typeof scenarios)[number]["name"];
+type ProgressItem = {
+  _id: string;
+  factor: string;
+  value: number;
+  updatedAt: number;
+};
 
 function App() {
   const submitPostCreated = useMutation(api.example.submitPostCreated);
@@ -51,15 +49,17 @@ function App() {
     api.example.submitProfileCompleted,
   );
   const resetDebug = useMutation(api.example.resetDebug);
-  const checkpoints = useQuery(api.example.listByUser, { userId, limit: 30 });
+  const progress = useQuery(api.example.listProgressForUser, {
+    userId,
+    limit: 30,
+  });
   const actions = useQuery(api.example.listDebugActions, { userId, limit: 30 });
   const stats = useQuery(api.example.getStats, { userId });
 
-  const [selected, setSelected] = useState<ScenarioName>("post.created");
+  const [selected, setSelected] = useState<ScenarioName>("create_post");
   const [manualPayload, setManualPayload] = useState(() =>
     pretty(scenarios[1].payload()),
   );
-  const [idempotencyKey, setIdempotencyKey] = useState("");
   const [transport, setTransport] = useState<"mutation" | "http">("mutation");
   const [lastResult, setLastResult] = useState("Idle");
   const [busy, setBusy] = useState(false);
@@ -98,7 +98,6 @@ function App() {
           },
           body: JSON.stringify({
             ...payload,
-            idempotencyKey: idempotencyKey || undefined,
           }),
         });
         const body = await response.json();
@@ -122,21 +121,19 @@ function App() {
 
   async function submitByName(name: string, payload: Record<string, unknown>) {
     switch (name) {
-      case "user.signup":
+      case "signup":
         return await submitSignup({
           userId,
           email: String(payload.email),
           source: String(payload.source),
-          idempotencyKey: idempotencyKey || undefined,
         });
-      case "post.created":
+      case "create_post":
         return await submitPostCreated({
           userId,
           postId: String(payload.postId),
           title: String(payload.title),
-          idempotencyKey: idempotencyKey || undefined,
         });
-      case "profile.completed":
+      case "profile_completed":
         return await submitProfileCompleted({
           userId,
           fields: Array.isArray(payload.fields)
@@ -233,15 +230,6 @@ function App() {
             />
           </label>
 
-          <label className="field">
-            <span>Idempotency key</span>
-            <input
-              value={idempotencyKey}
-              onChange={(change) => setIdempotencyKey(change.target.value)}
-              placeholder={`${selected}:demo`}
-            />
-          </label>
-
           <button
             className="button primary"
             onClick={submitManual}
@@ -281,25 +269,21 @@ function App() {
 
         <div className="panel checkpointLog">
           <div className="panelHeader">
-            <h2>Stored Checkpoints</h2>
+            <h2>Progress</h2>
             <span>
-              {checkpoints === undefined
+              {progress === undefined
                 ? "loading"
-                : `${checkpoints.length} rows`}
+                : `${progress.length} rows`}
             </span>
           </div>
           <div className="timeline">
-            {checkpoints?.map((checkpoint) => (
-              <article key={checkpoint._id} className="row checkpointRow">
+            {progress?.map((item: ProgressItem) => (
+              <article key={item._id} className="row checkpointRow">
                 <div>
-                  <strong>{checkpoint.name}</strong>
-                  <pre>
-                    {JSON.stringify(checkpoint.payload ?? null, null, 2)}
-                  </pre>
+                  <strong>{item.factor}</strong>
+                  <pre>{JSON.stringify({ value: item.value }, null, 2)}</pre>
                 </div>
-                <time>
-                  {new Date(checkpoint.receivedAt).toLocaleTimeString()}
-                </time>
+                <time>{new Date(item.updatedAt).toLocaleTimeString()}</time>
               </article>
             ))}
           </div>

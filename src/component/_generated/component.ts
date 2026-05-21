@@ -24,65 +24,76 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     lib: {
-      listByName: FunctionReference<
+      getProgress: FunctionReference<
         "query",
         "internal",
-        { limit?: number; name: string },
-        Array<{
+        { factor: string; userId: string },
+        null | {
           _creationTime: number;
           _id: string;
-          idempotencyKey?: string;
-          name: string;
-          payload?: any;
-          reachedAt: number;
-          receivedAt: number;
-          userId?: string;
-        }>,
+          factor: string;
+          updatedAt: number;
+          userId: string;
+          value: number;
+        },
         Name
       >;
-      listByUser: FunctionReference<
+      listProgressForUser: FunctionReference<
         "query",
         "internal",
         { limit?: number; userId: string },
         Array<{
           _creationTime: number;
           _id: string;
-          idempotencyKey?: string;
-          name: string;
-          payload?: any;
-          reachedAt: number;
-          receivedAt: number;
-          userId?: string;
+          factor: string;
+          updatedAt: number;
+          userId: string;
+          value: number;
         }>,
         Name
       >;
-      listRecent: FunctionReference<
+      listRules: FunctionReference<
         "query",
         "internal",
-        { limit?: number },
+        { factor?: string; limit?: number },
         Array<{
           _creationTime: number;
           _id: string;
-          idempotencyKey?: string;
+          actionName: string;
+          createdAt: number;
+          factor: string;
           name: string;
-          payload?: any;
-          reachedAt: number;
-          receivedAt: number;
-          userId?: string;
+          threshold: number;
+          updatedAt: number;
         }>,
         Name
       >;
-      record: FunctionReference<
+      registerRule: FunctionReference<
+        "mutation",
+        "internal",
+        { actionName: string; factor: string; name: string; threshold: number },
+        { created: boolean; ruleId: string },
+        Name
+      >;
+      trackEvent: FunctionReference<
         "mutation",
         "internal",
         {
-          idempotencyKey?: string;
-          name: string;
+          factor: string;
+          increment?: number;
+          occurredAt?: number;
           payload?: any;
-          reachedAt?: number;
-          userId?: string;
+          userId: string;
         },
-        { checkpointId: string; created: boolean },
+        {
+          completed: Array<{
+            actionName: string;
+            ruleName: string;
+            threshold: number;
+          }>;
+          progressId: string;
+          value: number;
+        },
         Name
       >;
     };

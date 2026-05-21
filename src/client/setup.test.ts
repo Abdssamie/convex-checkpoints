@@ -5,10 +5,10 @@ export const modules = import.meta.glob("./**/*.*s");
 
 import {
   defineSchema,
+  type AnyComponents,
   type GenericSchema,
   type SchemaDefinition,
 } from "convex/server";
-import { type ComponentApi } from "../component/_generated/component.js";
 import { componentsGeneric } from "convex/server";
 import { register } from "../test.js";
 
@@ -19,8 +19,8 @@ export function initConvexTest<
   register(t);
   return t;
 }
-export const components = componentsGeneric() as unknown as {
-  convexCheckpoints: ComponentApi;
+export const components: AnyComponents = {
+  convexCheckpoints: componentsGeneric().convexCheckpoints,
 };
 
 test("setup", () => {});

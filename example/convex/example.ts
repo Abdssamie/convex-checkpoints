@@ -6,128 +6,41 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server.js";
-import { ConvexCheckpoints } from "@abdssamie/convex-checkpoints";
+import {
+  ConvexCheckpoints,
+  type CheckpointCompletion,
+} from "@abdssamie/convex-checkpoints";
 
 const demoUserId = "demo-user";
 
-export const checkpoints = new ConvexCheckpoints<{
-  "user.signup": { userId: string; email: string; source: string };
-  "post.created": { userId: string; postId: string; title: string };
-  "profile.completed": { userId: string; fields: string[] };
-  "billing.upgraded": { userId: string; plan: "pro" | "team" };
-}>(components.convexCheckpoints);
-
-checkpoints.on("user.signup", async (ctx, payload) => {
-  await ctx.runMutation(internal.example.logAction, {
-    userId: payload.userId,
-    checkpointName: "user.signup",
-    action: "welcome_email",
-    status: "scheduled",
-    detail: `Welcome email scheduled for ${payload.email}`,
-    payload,
-  });
-  await ctx.scheduler.runAfter(
-    30 * 60 * 1000,
-    internal.example.markWelcomeEmailSent,
-    {
-      userId: payload.userId,
-      email: payload.email,
-    },
-  );
-});
-
-checkpoints.on("post.created", async (ctx, payload) => {
-  const postsCreated: number = await ctx.runMutation(
-    internal.example.incrementPosts,
-    {
-      userId: payload.userId,
-    },
-  );
-
-  await ctx.runMutation(internal.example.logAction, {
-    userId: payload.userId,
-    checkpointName: "post.created",
-    action: "post_counter",
-    status: "updated",
-    detail: `Post counter is now ${postsCreated}`,
-    payload,
-  });
-
-  if (postsCreated === 5) {
-    const credits: number = await ctx.runMutation(internal.example.addCredits, {
-      userId: payload.userId,
-      amount: 100,
-    });
-    await ctx.runMutation(internal.example.logAction, {
-      userId: payload.userId,
-      checkpointName: "post.created",
-      action: "credits_awarded",
-      status: "completed",
-      detail: `Granted 100 credits at 5 posts. Balance: ${credits}`,
-      payload,
-    });
-  }
-});
-
-checkpoints.on("profile.completed", async (ctx, payload) => {
-  await ctx.runMutation(internal.example.completeProfile, {
-    userId: payload.userId,
-  });
-  await ctx.runMutation(internal.example.logAction, {
-    userId: payload.userId,
-    checkpointName: "profile.completed",
-    action: "profile_badge",
-    status: "completed",
-    detail: `Profile badge unlocked with ${payload.fields.length} fields`,
-    payload,
-  });
-  await ctx.scheduler.runAt(
-    Date.now() + 5 * 60 * 1000,
-    internal.example.auditProfileCompletion,
-    {
-      userId: payload.userId,
-      fields: payload.fields,
-    },
-  );
-});
-
-checkpoints.on("billing.upgraded", async (ctx, payload) => {
-  const amount = payload.plan === "team" ? 1000 : 300;
-  const credits: number = await ctx.runMutation(internal.example.addCredits, {
-    userId: payload.userId,
-    amount,
-  });
-  await ctx.runMutation(internal.example.logAction, {
-    userId: payload.userId,
-    checkpointName: "billing.upgraded",
-    action: "plan_credits",
-    status: "completed",
-    detail: `Added ${amount} ${payload.plan} credits. Balance: ${credits}`,
-    payload,
-  });
-});
-
-export const { listRecent, listByName, listByUser } = checkpoints.api();
-
-export const submitPostCreated = mutation({
-  args: {
-    userId: v.string(),
-    postId: v.string(),
-    title: v.string(),
-    idempotencyKey: v.optional(v.string()),
+export const checkpoints: ConvexCheckpoints = new ConvexCheckpoints(
+  components.convexCheckpoints,
+  {
+    onComplete: internal.example.onCheckpointComplete,
   },
-  returns: v.string(),
-  handler: async (ctx, args) => {
-    return await checkpoints.submit(ctx, {
-      name: "post.created",
-      userId: args.userId,
-      payload: {
-        userId: args.userId,
-        postId: args.postId,
-        title: args.title,
-      },
-      idempotencyKey: args.idempotencyKey,
-    });
+);
+
+const completionArgsValidator = {
+  userId: v.string(),
+  factor: v.string(),
+  ruleName: v.string(),
+  actionName: v.string(),
+  value: v.number(),
+  threshold: v.number(),
+  completedAt: v.number(),
+  occurredAt: v.optional(v.number()),
+  payload: v.optional(v.any()),
+};
+
+export const { listRules, getProgress, listProgressForUser } =
+  checkpoints.api();
+
+export const configureRules = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await registerDefaultRules(ctx);
+    return null;
   },
 });
 
@@ -136,20 +49,43 @@ export const submitSignup = mutation({
     userId: v.string(),
     email: v.string(),
     source: v.string(),
-    idempotencyKey: v.optional(v.string()),
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    return await checkpoints.submit(ctx, {
-      name: "user.signup",
+    await registerDefaultRules(ctx);
+    const result = await checkpoints.trackEvent(ctx, {
       userId: args.userId,
+      factor: "signup",
       payload: {
-        userId: args.userId,
         email: args.email,
         source: args.source,
       },
-      idempotencyKey: args.idempotencyKey,
     });
+    return result.progressId;
+  },
+});
+
+export const submitPostCreated = mutation({
+  args: {
+    userId: v.string(),
+    postId: v.string(),
+    title: v.string(),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    await registerDefaultRules(ctx);
+    await ctx.runMutation(internal.example.incrementPosts, {
+      userId: args.userId,
+    });
+    const result = await checkpoints.trackEvent(ctx, {
+      userId: args.userId,
+      factor: "create_post",
+      payload: {
+        postId: args.postId,
+        title: args.title,
+      },
+    });
+    return result.progressId;
   },
 });
 
@@ -160,14 +96,18 @@ export const submitProfileCompleted = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    return await checkpoints.submit(ctx, {
-      name: "profile.completed",
+    await registerDefaultRules(ctx);
+    await ctx.runMutation(internal.example.completeProfile, {
       userId: args.userId,
+    });
+    const result = await checkpoints.trackEvent(ctx, {
+      userId: args.userId,
+      factor: "profile_completed",
       payload: {
-        userId: args.userId,
         fields: args.fields,
       },
     });
+    return result.progressId;
   },
 });
 
@@ -250,6 +190,58 @@ export const resetDebug = mutation({
   },
 });
 
+export const onCheckpointComplete = internalMutation({
+  args: completionArgsValidator,
+  returns: v.null(),
+  handler: async (ctx, args: CheckpointCompletion) => {
+    switch (args.actionName) {
+      case "welcome_email":
+        await ctx.scheduler.runAfter(
+          30 * 60 * 1000,
+          internal.example.logAction,
+          {
+            userId: args.userId,
+            checkpointName: args.ruleName,
+            action: "welcome_email_sent",
+            status: "completed",
+            detail: `Delayed welcome email sent for ${args.userId}`,
+            payload: args,
+          },
+        );
+        break;
+      case "add_credits": {
+        const credits: number = await ctx.runMutation(
+          internal.example.addCredits,
+          {
+            userId: args.userId,
+            amount: 100,
+          },
+        );
+        await ctx.runMutation(internal.example.logAction, {
+          userId: args.userId,
+          checkpointName: args.ruleName,
+          action: "credits_awarded",
+          status: "completed",
+          detail: `Granted 100 credits at ${args.value} posts. Balance: ${credits}`,
+          payload: args,
+        });
+        break;
+      }
+      case "profile_badge":
+        await ctx.runMutation(internal.example.logAction, {
+          userId: args.userId,
+          checkpointName: args.ruleName,
+          action: "profile_badge",
+          status: "completed",
+          detail: "Profile badge unlocked",
+          payload: args,
+        });
+        break;
+    }
+    return null;
+  },
+});
+
 export const logAction = internalMutation({
   args: {
     userId: v.string(),
@@ -317,45 +309,28 @@ export const addCredits = internalMutation({
   },
 });
 
-export const markWelcomeEmailSent = internalMutation({
-  args: {
-    userId: v.string(),
-    email: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.insert("debugActions", {
-      userId: args.userId,
-      checkpointName: "user.signup",
-      action: "welcome_email_sent",
-      status: "completed",
-      detail: `Delayed welcome email sent to ${args.email}`,
-      payload: args,
-      createdAt: Date.now(),
-    });
-    return null;
-  },
-});
+async function registerDefaultRules(ctx: MutationCtx) {
+  await checkpoints.registerRule(ctx, {
+    name: "welcome-after-signup",
+    factor: "signup",
+    threshold: 1,
+    actionName: "welcome_email",
+  });
 
-export const auditProfileCompletion = internalMutation({
-  args: {
-    userId: v.string(),
-    fields: v.array(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.insert("debugActions", {
-      userId: args.userId,
-      checkpointName: "profile.completed",
-      action: "profile_audit",
-      status: "completed",
-      detail: `Profile completion audited for ${args.fields.length} fields`,
-      payload: args,
-      createdAt: Date.now(),
-    });
-    return null;
-  },
-});
+  await checkpoints.registerRule(ctx, {
+    name: "credits-after-five-posts",
+    factor: "create_post",
+    threshold: 5,
+    actionName: "add_credits",
+  });
+
+  await checkpoints.registerRule(ctx, {
+    name: "badge-after-profile-completion",
+    factor: "profile_completed",
+    threshold: 1,
+    actionName: "profile_badge",
+  });
+}
 
 async function getOrCreateStats(ctx: MutationCtx, userId: string) {
   const existing = await ctx.db

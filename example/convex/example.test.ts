@@ -2,37 +2,42 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { initConvexTest } from "./setup.test";
 import { api } from "./_generated/api";
 
+type Rule = { name: string };
+
 describe("example", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  test("submit and listByUser", async () => {
+  test("configures rules and tracks progress", async () => {
     const t = initConvexTest();
 
-    const checkpointId = await t.mutation(api.example.submitPostCreated, {
-      userId: "user1",
-      postId: "post1",
-      title: "Test post",
-    });
-    expect(checkpointId).toBeDefined();
+    await t.mutation(api.example.configureRules, {});
+    const rules = await t.query(api.example.listRules, {});
+    expect(rules.map((rule: Rule) => rule.name).sort()).toEqual([
+      "badge-after-profile-completion",
+      "credits-after-five-posts",
+      "welcome-after-signup",
+    ]);
 
-    const checkpoints = await t.query(api.example.listByUser, {
-      userId: "user1",
-    });
-    expect(checkpoints).toHaveLength(1);
-    expect(checkpoints[0].name).toBe("post.created");
-    expect(checkpoints[0].payload).toEqual({
+    await t.mutation(api.example.submitPostCreated, {
       userId: "user1",
       postId: "post1",
       title: "Test post",
     });
+
+    const progress = await t.query(api.example.getProgress, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    expect(progress?.value).toBe(1);
   });
 
-  test("submits HTTP checkpoints from checkpoint-specific routes", async () => {
+  test("submits HTTP checkpoint events from factor-specific routes", async () => {
     const t = initConvexTest();
+    await t.mutation(api.example.configureRules, {});
 
-    const response = await t.fetch("/checkpoints/post.created", {
+    const response = await t.fetch("/checkpoints/create_post", {
       method: "POST",
       headers: { authorization: "Bearer checkpoint-secret" },
       body: JSON.stringify({
@@ -43,42 +48,38 @@ describe("example", () => {
 
     expect(response.status).toBe(202);
     const body = await response.json();
-    expect(body.created).toBe(true);
+    expect(body.value).toBe(1);
 
-    const checkpoints = await t.query(api.example.listByUser, {
+    const progress = await t.query(api.example.getProgress, {
       userId: "user1",
+      factor: "create_post",
     });
-    expect(checkpoints).toHaveLength(1);
-    expect(checkpoints[0].name).toBe("post.created");
-    expect(checkpoints[0].payload).toEqual({
-      userId: "user1",
-      postId: "post1",
-    });
+    expect(progress?.value).toBe(1);
   });
 
-  test("rejects HTTP checkpoints without authorization", async () => {
+  test("rejects HTTP checkpoint events without authorization", async () => {
     const t = initConvexTest();
 
-    const response = await t.fetch("/checkpoints/post.created", {
+    const response = await t.fetch("/checkpoints/create_post", {
       method: "POST",
       body: JSON.stringify({
         userId: "user1",
-        postId: "post1",
       }),
     });
 
     expect(response.status).toBe(401);
 
-    const checkpoints = await t.query(api.example.listByUser, {
+    const progress = await t.query(api.example.getProgress, {
       userId: "user1",
+      factor: "create_post",
     });
-    expect(checkpoints).toHaveLength(0);
+    expect(progress).toBeNull();
   });
 
   test("allows Authorization header in HTTP checkpoint preflight", async () => {
     const t = initConvexTest();
 
-    const response = await t.fetch("/checkpoints/post.created", {
+    const response = await t.fetch("/checkpoints/create_post", {
       method: "OPTIONS",
     });
 
@@ -88,27 +89,7 @@ describe("example", () => {
     );
   });
 
-  test("submits HTTP checkpoints without registered handlers", async () => {
-    const t = initConvexTest();
-
-    const response = await t.fetch("/checkpoints/user.signup", {
-      method: "POST",
-      headers: { authorization: "Bearer checkpoint-secret" },
-      body: JSON.stringify({
-        userId: "user1",
-      }),
-    });
-
-    expect(response.status).toBe(202);
-
-    const checkpoints = await t.query(api.example.listByUser, {
-      userId: "user1",
-    });
-    expect(checkpoints).toHaveLength(1);
-    expect(checkpoints[0].name).toBe("user.signup");
-  });
-
-  test("runs scheduled runAfter action from signup handler", async () => {
+  test("runs delayed welcome callback after signup", async () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
@@ -121,7 +102,6 @@ describe("example", () => {
     let actions = await t.query(api.example.listDebugActions, {
       userId: "user1",
     });
-    expect(actions.map((action) => action.action)).toContain("welcome_email");
     expect(actions.map((action) => action.action)).not.toContain(
       "welcome_email_sent",
     );
@@ -136,28 +116,30 @@ describe("example", () => {
     );
   });
 
-  test("runs scheduled runAt action from profile completion handler", async () => {
+  test("grants credits after creating five posts", async () => {
     vi.useFakeTimers();
     const t = initConvexTest();
 
-    await t.mutation(api.example.submitProfileCompleted, {
-      userId: "user1",
-      fields: ["name", "avatar", "timezone"],
-    });
-
-    let actions = await t.query(api.example.listDebugActions, {
-      userId: "user1",
-    });
-    expect(actions.map((action) => action.action)).toContain("profile_badge");
-    expect(actions.map((action) => action.action)).not.toContain(
-      "profile_audit",
-    );
-
+    for (let i = 0; i < 5; i += 1) {
+      await t.mutation(api.example.submitPostCreated, {
+        userId: "user1",
+        postId: `post${i}`,
+        title: "Test post",
+      });
+    }
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-    actions = await t.query(api.example.listDebugActions, {
+    const stats = await t.query(api.example.getStats, {
       userId: "user1",
     });
-    expect(actions.map((action) => action.action)).toContain("profile_audit");
+    expect(stats?.postsCreated).toBe(5);
+    expect(stats?.credits).toBe(100);
+
+    const actions = await t.query(api.example.listDebugActions, {
+      userId: "user1",
+    });
+    expect(actions.map((action) => action.action)).toContain(
+      "credits_awarded",
+    );
   });
 });

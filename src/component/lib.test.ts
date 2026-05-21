@@ -5,46 +5,90 @@ import { api } from "./_generated/api.js";
 import { initConvexTest } from "./setup.test.js";
 
 describe("component lib", () => {
-  test("stores submitted checkpoints in the audit log", async () => {
+  test("registers rules and tracks factor progress", async () => {
     const t = initConvexTest();
-    const result = await t.mutation(api.lib.record, {
-      name: "post.created",
-      userId: "user1",
-      payload: { postId: "post1" },
-      reachedAt: 123,
+    const rule = await t.mutation(api.lib.registerRule, {
+      name: "credits-after-five-posts",
+      factor: "create_post",
+      threshold: 5,
+      actionName: "add_credits",
     });
 
-    expect(result.checkpointId).toBeDefined();
-    expect(result.created).toBe(true);
+    expect(rule.ruleId).toBeDefined();
+    expect(rule.created).toBe(true);
 
-    const checkpoints = await t.query(api.lib.listByUser, { userId: "user1" });
-    expect(checkpoints).toHaveLength(1);
-    expect(checkpoints[0].name).toBe("post.created");
-    expect(checkpoints[0].payload).toEqual({ postId: "post1" });
+    const progress = await t.mutation(api.lib.trackEvent, {
+      userId: "user1",
+      factor: "create_post",
+      increment: 2,
+    });
+
+    expect(progress.value).toBe(2);
+    expect(progress.completed).toHaveLength(0);
+
+    const stored = await t.query(api.lib.getProgress, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    expect(stored?.value).toBe(2);
   });
 
-  test("deduplicates checkpoints by idempotency key", async () => {
+  test("schedules a completion only when progress crosses the threshold", async () => {
     const t = initConvexTest();
-    const first = await t.mutation(api.lib.record, {
-      name: "user.signup",
-      userId: "user1",
-      idempotencyKey: "signup:user1",
-    });
-    const second = await t.mutation(api.lib.record, {
-      name: "user.signup",
-      userId: "user1",
-      idempotencyKey: "signup:user1",
+    await t.mutation(api.lib.registerRule, {
+      name: "credits-after-five-posts",
+      factor: "create_post",
+      threshold: 5,
+      actionName: "add_credits",
     });
 
-    expect(first.created).toBe(true);
+    const first = await t.mutation(api.lib.trackEvent, {
+      userId: "user1",
+      factor: "create_post",
+      increment: 4,
+    });
+    const second = await t.mutation(api.lib.trackEvent, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    const third = await t.mutation(api.lib.trackEvent, {
+      userId: "user1",
+      factor: "create_post",
+    });
+
+    expect(first.completed).toHaveLength(0);
+    expect(second.completed).toMatchObject([
+      {
+        ruleName: "credits-after-five-posts",
+        actionName: "add_credits",
+        threshold: 5,
+      },
+    ]);
+    expect(third.completed).toHaveLength(0);
+  });
+
+  test("upserts rules by name", async () => {
+    const t = initConvexTest();
+    const first = await t.mutation(api.lib.registerRule, {
+      name: "welcome-after-signup",
+      factor: "signup",
+      threshold: 1,
+      actionName: "welcome_email",
+    });
+    const second = await t.mutation(api.lib.registerRule, {
+      name: "welcome-after-signup",
+      factor: "signup",
+      threshold: 2,
+      actionName: "welcome_email",
+    });
+
     expect(second).toEqual({
-      checkpointId: first.checkpointId,
+      ruleId: first.ruleId,
       created: false,
     });
 
-    const checkpoints = await t.query(api.lib.listByName, {
-      name: "user.signup",
-    });
-    expect(checkpoints).toHaveLength(1);
+    const rules = await t.query(api.lib.listRules, { factor: "signup" });
+    expect(rules).toHaveLength(1);
+    expect(rules[0].threshold).toBe(2);
   });
 });

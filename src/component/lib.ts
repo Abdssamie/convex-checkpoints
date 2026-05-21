@@ -1,101 +1,181 @@
 import { v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server.js";
+import { mutation, query } from "./_generated/server.js";
 import schema from "./schema.js";
 
-const checkpointValidator = schema.tables.checkpoints.validator.extend({
-  _id: v.id("checkpoints"),
+const ruleValidator = schema.tables.rules.validator.extend({
+  _id: v.id("rules"),
   _creationTime: v.number(),
 });
 
-export const record = mutation({
+const progressValidator = schema.tables.progress.validator.extend({
+  _id: v.id("progress"),
+  _creationTime: v.number(),
+});
+
+export const registerRule = mutation({
   args: {
     name: v.string(),
-    userId: v.optional(v.string()),
-    payload: v.optional(v.any()),
-    idempotencyKey: v.optional(v.string()),
-    reachedAt: v.optional(v.number()),
+    factor: v.string(),
+    threshold: v.number(),
+    actionName: v.string(),
   },
   returns: v.object({
-    checkpointId: v.id("checkpoints"),
+    ruleId: v.id("rules"),
     created: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    if (args.idempotencyKey !== undefined) {
-      const existing = await ctx.db
-        .query("checkpoints")
-        .withIndex("by_idempotencyKey", (q) =>
-          q.eq("idempotencyKey", args.idempotencyKey),
-        )
-        .unique();
-
-      if (existing !== null) {
-        return { checkpointId: existing._id, created: false };
-      }
+    if (args.threshold <= 0) {
+      throw new Error("Rule threshold must be greater than zero.");
     }
 
     const now = Date.now();
-    const checkpointId = await ctx.db.insert("checkpoints", {
+    const existing = await ctx.db
+      .query("rules")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .unique();
+
+    const rule = {
       name: args.name,
-      userId: args.userId,
-      payload: args.payload,
-      idempotencyKey: args.idempotencyKey,
-      reachedAt: args.reachedAt ?? now,
-      receivedAt: now,
+      factor: args.factor,
+      threshold: args.threshold,
+      actionName: args.actionName,
+      updatedAt: now,
+    };
+
+    if (existing !== null) {
+      await ctx.db.patch("rules", existing._id, rule);
+      return { ruleId: existing._id, created: false };
+    }
+
+    const ruleId = await ctx.db.insert("rules", {
+      ...rule,
+      createdAt: now,
+    });
+    return { ruleId, created: true };
+  },
+});
+
+export const trackEvent = mutation({
+  args: {
+    userId: v.string(),
+    factor: v.string(),
+    increment: v.optional(v.number()),
+    payload: v.optional(v.any()),
+    occurredAt: v.optional(v.number()),
+  },
+  returns: v.object({
+    progressId: v.id("progress"),
+    value: v.number(),
+    completed: v.array(
+      v.object({
+        ruleName: v.string(),
+        actionName: v.string(),
+        threshold: v.number(),
+      }),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const increment = args.increment ?? 1;
+    if (increment <= 0) {
+      throw new Error("Event increment must be greater than zero.");
+    }
+
+    const now = Date.now();
+    const existingProgress = await ctx.db
+      .query("progress")
+      .withIndex("by_userId_and_factor", (q) =>
+        q.eq("userId", args.userId).eq("factor", args.factor),
+      )
+      .unique();
+
+    const previousValue = existingProgress?.value ?? 0;
+    const value = previousValue + increment;
+    const progressId =
+      existingProgress?._id ??
+      (await ctx.db.insert("progress", {
+        userId: args.userId,
+        factor: args.factor,
+        value: 0,
+        updatedAt: now,
+      }));
+
+    await ctx.db.patch("progress", progressId, {
+      value,
+      updatedAt: now,
     });
 
-    return { checkpointId, created: true };
+    const completed = [];
+    const rules = ctx.db
+      .query("rules")
+      .withIndex("by_factor", (q) => q.eq("factor", args.factor));
+
+    for await (const rule of rules) {
+      if (previousValue >= rule.threshold || value < rule.threshold) {
+        continue;
+      }
+
+      completed.push({
+        ruleName: rule.name,
+        actionName: rule.actionName,
+        threshold: rule.threshold,
+      });
+    }
+
+    return { progressId, value, completed };
   },
 });
 
-export const listRecent = query({
+export const listRules = query({
   args: {
+    factor: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
-  returns: v.array(checkpointValidator),
+  returns: v.array(ruleValidator),
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("checkpoints")
-      .order("desc")
-      .take(args.limit ?? 100);
+    const limit = args.limit ?? 100;
+    if (args.factor !== undefined) {
+      return await ctx.db
+        .query("rules")
+        .withIndex("by_factor", (q) => q.eq("factor", args.factor!))
+        .take(limit);
+    }
+    return await ctx.db.query("rules").take(limit);
   },
 });
 
-export const listByName = query({
+export const getProgress = query({
   args: {
-    name: v.string(),
-    limit: v.optional(v.number()),
+    userId: v.string(),
+    factor: v.string(),
   },
-  returns: v.array(checkpointValidator),
+  returns: v.union(v.null(), progressValidator),
   handler: async (ctx, args) => {
     return await ctx.db
-      .query("checkpoints")
-      .withIndex("by_name_and_reachedAt", (q) => q.eq("name", args.name))
-      .order("desc")
-      .take(args.limit ?? 100);
+      .query("progress")
+      .withIndex("by_userId_and_factor", (q) =>
+        q.eq("userId", args.userId).eq("factor", args.factor),
+      )
+      .unique();
   },
 });
 
-export const listByUser = query({
+export const listProgressForUser = query({
   args: {
     userId: v.string(),
     limit: v.optional(v.number()),
   },
-  returns: v.array(checkpointValidator),
+  returns: v.array(progressValidator),
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("checkpoints")
-      .withIndex("by_userId_and_reachedAt", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .take(args.limit ?? 100);
-  },
-});
-
-export const get = internalQuery({
-  args: {
-    checkpointId: v.id("checkpoints"),
-  },
-  returns: v.union(v.null(), checkpointValidator),
-  handler: async (ctx, args) => {
-    return await ctx.db.get("checkpoints", args.checkpointId);
+    const progress = [];
+    const rows = ctx.db.query("progress").withIndex("by_userId_and_factor", (q) =>
+      q.eq("userId", args.userId),
+    );
+    for await (const row of rows) {
+      progress.push(row);
+      if (progress.length >= (args.limit ?? 100)) {
+        break;
+      }
+    }
+    return progress;
   },
 });

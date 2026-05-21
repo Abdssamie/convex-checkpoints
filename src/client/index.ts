@@ -1,43 +1,48 @@
 import {
-  actionGeneric,
   httpActionGeneric,
   httpRouter,
-  mutationGeneric,
   queryGeneric,
+  type FunctionReference,
   type GenericActionCtx,
   type GenericDataModel,
   type GenericMutationCtx,
+  type AnyComponents,
 } from "convex/server";
-import { v, type ObjectType, type PropertyValidators } from "convex/values";
+import { v } from "convex/values";
 import type { ComponentApi } from "../component/_generated/component.js";
-import {
-  ConvexCheckpoints as CheckpointDispatcher,
-  type CheckpointHandler,
-} from "../component/checkpointDispatcher.js";
 
-type CheckpointRegistry = Record<string, unknown>;
-type CheckpointName<TCheckpointRegistry extends CheckpointRegistry> = Extract<
-  keyof TCheckpointRegistry,
-  string
->;
-
-type BaseSubmitArgs = {
-  userId?: string;
-  idempotencyKey?: string;
-  reachedAt?: number;
-};
-
-type UntypedSubmitArgs = BaseSubmitArgs & {
-  name: string;
+export type CheckpointCompletion = {
+  userId: string;
+  factor: string;
+  ruleName: string;
+  actionName: string;
+  value: number;
+  threshold: number;
+  completedAt: number;
+  occurredAt?: number;
   payload?: unknown;
 };
 
-type SubmitArgs<
-  TCheckpointRegistry extends CheckpointRegistry,
-  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-> = BaseSubmitArgs & {
-  name: TCheckpoint;
-  payload: TCheckpointRegistry[TCheckpoint];
+type CompletionCallback = FunctionReference<
+  "mutation" | "action",
+  "public" | "internal",
+  CheckpointCompletion,
+  null
+>;
+
+type RegisterRuleArgs = {
+  name: string;
+  factor: string;
+  threshold: number;
+  actionName: string;
+};
+
+type TrackEventArgs = {
+  userId: string;
+  factor: string;
+  increment?: number;
+  payload?: unknown;
+  occurredAt?: number;
 };
 
 type HttpOptions = {
@@ -45,119 +50,68 @@ type HttpOptions = {
   authorize?: (request: Request) => boolean | Promise<boolean>;
 };
 
-type CheckpointMeta<
-  TCheckpointRegistry extends CheckpointRegistry,
-  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-> = {
-  checkpoint: TCheckpoint;
-  checkpointId: string;
-};
-
-type CheckpointDefinition<
-  TCheckpointRegistry extends CheckpointRegistry,
-  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-  TArgsValidator extends PropertyValidators,
-  TCtx,
-> = {
-  args: TArgsValidator;
-  handler: (
-    ctx: TCtx,
-    args: ObjectType<TArgsValidator>,
-    meta: CheckpointMeta<TCheckpointRegistry, TCheckpoint>,
-  ) => Promise<void> | void;
-  payload?: (
-    args: ObjectType<TArgsValidator>,
-  ) => TCheckpointRegistry[TCheckpoint];
-  userId?: (args: ObjectType<TArgsValidator>) => string | undefined;
-  idempotencyKey?: (args: ObjectType<TArgsValidator>) => string | undefined;
-  reachedAt?: (args: ObjectType<TArgsValidator>) => number | undefined;
+type ConvexCheckpointsOptions = {
+  onComplete: CompletionCallback;
 };
 
 export class ConvexCheckpoints<
-  TCheckpointRegistry extends CheckpointRegistry,
   TDataModel extends GenericDataModel = GenericDataModel,
-> extends CheckpointDispatcher<TCheckpointRegistry, TDataModel> {
-  constructor(private component: ComponentApi) {
-    super();
-  }
+> {
+  constructor(
+    component: ComponentApi,
+    options: ConvexCheckpointsOptions,
+  );
+  constructor(
+    component: AnyComponents[string],
+    options: ConvexCheckpointsOptions,
+  );
+  constructor(
+    private component: ComponentApi | AnyComponents[string],
+    private options: ConvexCheckpointsOptions,
+  ) {}
 
-  public async submit<TCheckpoint extends CheckpointName<TCheckpointRegistry>>(
+  public async registerRule(
     ctx: GenericMutationCtx<TDataModel>,
-    args: SubmitArgs<TCheckpointRegistry, TCheckpoint>,
+    args: RegisterRuleArgs,
   ) {
-    const result = await ctx.runMutation(this.component.lib.record, args);
-    if (result.created) {
-      await this.triggerMutation(ctx, args.name, args.payload);
-    }
-    return result.checkpointId;
-  }
-
-  public mutation<
-    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-    TArgsValidator extends PropertyValidators,
-  >(
-    checkpoint: TCheckpoint,
-    definition: CheckpointDefinition<
-      TCheckpointRegistry,
-      TCheckpoint,
-      TArgsValidator,
-      GenericMutationCtx<TDataModel>
-    >,
-  ) {
-    return mutationGeneric({
-      args: definition.args,
-      returns: v.string(),
-      handler: async (
-        ctx: GenericMutationCtx<TDataModel>,
-        args: ObjectType<TArgsValidator>,
-      ) => {
-        return await this.recordAndRunMutation(ctx, checkpoint, args, definition);
-      },
+    return await ctx.runMutation(this.component.lib.registerRule, {
+      name: args.name,
+      factor: args.factor,
+      threshold: args.threshold,
+      actionName: args.actionName,
     });
   }
 
-  public action<
-    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-    TArgsValidator extends PropertyValidators,
-  >(
-    checkpoint: TCheckpoint,
-    definition: CheckpointDefinition<
-      TCheckpointRegistry,
-      TCheckpoint,
-      TArgsValidator,
-      GenericActionCtx<TDataModel>
-    >,
+  public async trackEvent(
+    ctx: GenericMutationCtx<TDataModel>,
+    args: TrackEventArgs,
   ) {
-    return actionGeneric({
-      args: definition.args,
-      returns: v.string(),
-      handler: async (
-        ctx: GenericActionCtx<TDataModel>,
-        args: ObjectType<TArgsValidator>,
-      ) => {
-        return await this.recordAndRunAction(ctx, checkpoint, args, definition);
-      },
-    });
+    const result = await ctx.runMutation(this.component.lib.trackEvent, args);
+    await this.scheduleCompletions(ctx, args, result.completed, result.value);
+    return result;
   }
 
   public api() {
     return {
-      listRecent: queryGeneric({
-        args: { limit: v.optional(v.number()) },
+      listRules: queryGeneric({
+        args: { factor: v.optional(v.string()), limit: v.optional(v.number()) },
         handler: async (ctx, args) => {
-          return await ctx.runQuery(this.component.lib.listRecent, args);
+          return await ctx.runQuery(this.component.lib.listRules, args);
         },
       }),
-      listByName: queryGeneric({
-        args: { name: v.string(), limit: v.optional(v.number()) },
+      getProgress: queryGeneric({
+        args: { userId: v.string(), factor: v.string() },
         handler: async (ctx, args) => {
-          return await ctx.runQuery(this.component.lib.listByName, args);
+          return await ctx.runQuery(this.component.lib.getProgress, args);
         },
       }),
-      listByUser: queryGeneric({
+      listProgressForUser: queryGeneric({
         args: { userId: v.string(), limit: v.optional(v.number()) },
         handler: async (ctx, args) => {
-          return await ctx.runQuery(this.component.lib.listByUser, args);
+          return await ctx.runQuery(
+            this.component.lib.listProgressForUser,
+            args,
+          );
         },
       }),
     };
@@ -173,17 +127,13 @@ export class ConvexCheckpoints<
           return json({ error: "unauthorized" }, 401);
         }
 
-        const args = await readSubmitArgsFromBody(request);
+        const args = await readTrackEventArgsFromBody(request);
         if (args === null) {
-          return json({ error: "invalid_checkpoint" }, 400);
+          return json({ error: "invalid_checkpoint_event" }, 400);
         }
 
-        const result = await this.submitFromArgs(ctx, args);
-
-        return json(
-          { checkpointId: result.checkpointId, created: result.created },
-          202,
-        );
+        const result = await this.trackEventFromAction(ctx, args);
+        return json(result, 202);
       }),
     });
     http.route({
@@ -201,22 +151,18 @@ export class ConvexCheckpoints<
           return json({ error: "unauthorized" }, 401);
         }
 
-        const checkpointName = readCheckpointNameFromPath(request, pathPrefix);
-        if (checkpointName === null) {
+        const factor = readFactorFromPath(request, pathPrefix);
+        if (factor === null) {
           return json({ error: "invalid_checkpoint_path" }, 400);
         }
 
-        const args = await readSubmitArgsFromPath(request, checkpointName);
+        const args = await readTrackEventArgsFromPath(request, factor);
         if (args === null) {
-          return json({ error: "invalid_checkpoint" }, 400);
+          return json({ error: "invalid_checkpoint_event" }, 400);
         }
 
-        const result = await this.submitFromArgs(ctx, args);
-
-        return json(
-          { checkpointId: result.checkpointId, created: result.created },
-          202,
-        );
+        const result = await this.trackEventFromAction(ctx, args);
+        return json(result, 202);
       }),
     });
     http.route({
@@ -227,121 +173,47 @@ export class ConvexCheckpoints<
     return http;
   }
 
-  private async submitFromArgs(
+  private async trackEventFromAction(
     ctx: GenericActionCtx<GenericDataModel>,
-    args: UntypedSubmitArgs,
+    args: TrackEventArgs,
   ) {
-    return await ctx.runMutation(this.component.lib.record, args);
+    const result = await ctx.runMutation(this.component.lib.trackEvent, args);
+    await this.scheduleCompletions(ctx, args, result.completed, result.value);
+    return result;
   }
 
-  private async recordAndRunMutation<
-    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-    TArgsValidator extends PropertyValidators,
-  >(
-    ctx: GenericMutationCtx<TDataModel>,
-    checkpoint: TCheckpoint,
-    args: ObjectType<TArgsValidator>,
-    definition: CheckpointDefinition<
-      TCheckpointRegistry,
-      TCheckpoint,
-      TArgsValidator,
-      GenericMutationCtx<TDataModel>
+  private async scheduleCompletions(
+    ctx: Pick<
+      GenericMutationCtx<TDataModel> | GenericActionCtx<GenericDataModel>,
+      "scheduler"
     >,
+    event: TrackEventArgs,
+    completed: Array<{
+      ruleName: string;
+      actionName: string;
+      threshold: number;
+    }>,
+    value: number,
   ) {
-    const result = await ctx.runMutation(
-      this.component.lib.record,
-      buildRecordArgs(checkpoint, args, definition),
-    );
-
-    if (result.created) {
-      await definition.handler(ctx, args, {
-        checkpoint,
-        checkpointId: result.checkpointId,
-      });
+    const completedAt = Date.now();
+    for (const completion of completed) {
+      await ctx.scheduler.runAfter(
+        0,
+        this.options.onComplete,
+        {
+          userId: event.userId,
+          factor: event.factor,
+          ruleName: completion.ruleName,
+          actionName: completion.actionName,
+          value,
+          threshold: completion.threshold,
+          completedAt,
+          occurredAt: event.occurredAt,
+          payload: event.payload,
+        },
+      );
     }
-
-    return result.checkpointId;
   }
-
-  private async recordAndRunAction<
-    TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-    TArgsValidator extends PropertyValidators,
-  >(
-    ctx: GenericActionCtx<TDataModel>,
-    checkpoint: TCheckpoint,
-    args: ObjectType<TArgsValidator>,
-    definition: CheckpointDefinition<
-      TCheckpointRegistry,
-      TCheckpoint,
-      TArgsValidator,
-      GenericActionCtx<TDataModel>
-    >,
-  ) {
-    const result = await ctx.runMutation(
-      this.component.lib.record,
-      buildRecordArgs(checkpoint, args, definition),
-    );
-
-    if (result.created) {
-      await definition.handler(ctx, args, {
-        checkpoint,
-        checkpointId: result.checkpointId,
-      });
-    }
-
-    return result.checkpointId;
-  }
-}
-
-export type { CheckpointHandler };
-
-function buildRecordArgs<
-  TCheckpointRegistry extends CheckpointRegistry,
-  TCheckpoint extends CheckpointName<TCheckpointRegistry>,
-  TArgsValidator extends PropertyValidators,
-  TCtx,
->(
-  name: TCheckpoint,
-  args: ObjectType<TArgsValidator>,
-  definition: CheckpointDefinition<
-    TCheckpointRegistry,
-    TCheckpoint,
-    TArgsValidator,
-    TCtx
-  >,
-): UntypedSubmitArgs {
-  return {
-    name,
-    userId:
-      definition.userId?.(args) ??
-      readStringField(args, "userId"),
-    payload:
-      definition.payload?.(args) ??
-      defaultPayload(args),
-    idempotencyKey:
-      definition.idempotencyKey?.(args) ??
-      readStringField(args, "idempotencyKey"),
-    reachedAt:
-      definition.reachedAt?.(args) ??
-      readNumberField(args, "reachedAt"),
-  };
-}
-
-function defaultPayload<TArgs extends Record<string, unknown>>(args: TArgs) {
-  const payload = { ...args };
-  delete payload.idempotencyKey;
-  delete payload.reachedAt;
-  return payload;
-}
-
-function readStringField(args: Record<string, unknown>, field: string) {
-  const value = args[field];
-  return typeof value === "string" ? value : undefined;
-}
-
-function readNumberField(args: Record<string, unknown>, field: string) {
-  const value = args[field];
-  return typeof value === "number" ? value : undefined;
 }
 
 async function isAuthorized(request: Request, options: HttpOptions) {
@@ -361,58 +233,55 @@ async function isAuthorized(request: Request, options: HttpOptions) {
   return await options.authorize(request.clone());
 }
 
-async function readSubmitArgsFromBody(
+async function readTrackEventArgsFromBody(
   request: Request,
-): Promise<UntypedSubmitArgs | null> {
+): Promise<TrackEventArgs | null> {
   const checkpoint = await readJsonObject(request);
-  if (checkpoint === null || typeof checkpoint.name !== "string") {
+  if (checkpoint === null || typeof checkpoint.factor !== "string") {
     return null;
   }
-  return readSubmitArgs(checkpoint.name, checkpoint, checkpoint.payload);
+  return readTrackEventArgs(checkpoint.factor, checkpoint, checkpoint.payload);
 }
 
-async function readSubmitArgsFromPath(
+async function readTrackEventArgsFromPath(
   request: Request,
-  name: string,
-): Promise<UntypedSubmitArgs | null> {
+  factor: string,
+): Promise<TrackEventArgs | null> {
   const checkpoint = await readJsonObject(request);
   if (checkpoint === null) {
     return null;
   }
 
-  return readSubmitArgs(name, checkpoint, checkpoint);
+  return readTrackEventArgs(factor, checkpoint, checkpoint);
 }
 
-function readSubmitArgs(
-  name: string,
+function readTrackEventArgs(
+  factor: string,
   checkpoint: Record<string, unknown>,
   payload: unknown,
-): UntypedSubmitArgs | null {
+): TrackEventArgs | null {
+  if (typeof checkpoint.userId !== "string") {
+    return null;
+  }
   if (
-    checkpoint.userId !== undefined &&
-    typeof checkpoint.userId !== "string"
+    checkpoint.increment !== undefined &&
+    typeof checkpoint.increment !== "number"
   ) {
     return null;
   }
   if (
-    checkpoint.idempotencyKey !== undefined &&
-    typeof checkpoint.idempotencyKey !== "string"
-  ) {
-    return null;
-  }
-  if (
-    checkpoint.reachedAt !== undefined &&
-    typeof checkpoint.reachedAt !== "number"
+    checkpoint.occurredAt !== undefined &&
+    typeof checkpoint.occurredAt !== "number"
   ) {
     return null;
   }
 
   return {
-    name,
     userId: checkpoint.userId,
+    factor,
+    increment: checkpoint.increment,
+    occurredAt: checkpoint.occurredAt,
     payload,
-    idempotencyKey: checkpoint.idempotencyKey,
-    reachedAt: checkpoint.reachedAt,
   };
 }
 
@@ -437,21 +306,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readCheckpointNameFromPath(request: Request, pathPrefix: string) {
+function readFactorFromPath(request: Request, pathPrefix: string) {
   const path = new URL(request.url).pathname;
   if (!path.startsWith(pathPrefix)) {
     return null;
   }
-  const encodedCheckpointName = path.slice(pathPrefix.length);
-  if (
-    encodedCheckpointName.length === 0 ||
-    encodedCheckpointName.includes("/")
-  ) {
+  const encodedFactor = path.slice(pathPrefix.length);
+  if (encodedFactor.length === 0 || encodedFactor.includes("/")) {
     return null;
   }
 
   try {
-    return decodeURIComponent(encodedCheckpointName);
+    return decodeURIComponent(encodedFactor);
   } catch {
     return null;
   }

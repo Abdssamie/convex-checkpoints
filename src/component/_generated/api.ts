@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as checkpointDispatcher from "../checkpointDispatcher.js";
 import type * as lib from "../lib.js";
 
 import type {
@@ -19,7 +18,6 @@ import type {
 import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
-  checkpointDispatcher: typeof checkpointDispatcher;
   lib: typeof lib;
 }> = anyApi as any;
 

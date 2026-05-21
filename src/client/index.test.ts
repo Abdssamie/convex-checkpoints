@@ -1,126 +1,144 @@
+/// <reference types="vite/client" />
+
 import { describe, expect, test, vi } from "vitest";
-import { anyApi, type ApiFromModules } from "convex/server";
+import {
+  internalMutationGeneric,
+  makeFunctionReference,
+  mutationGeneric,
+} from "convex/server";
 import { v } from "convex/values";
-import { ConvexCheckpoints } from "./index.js";
+import { ConvexCheckpoints, type CheckpointCompletion } from "./index.js";
 import { components, initConvexTest } from "./setup.test.js";
 
-const checkpoints = new ConvexCheckpoints<{
-  "post.created": { userId: string; postId: string };
-}>(components.convexCheckpoints);
-
-export const { listByUser } = checkpoints.api();
-const postCreatedHandler = vi.fn();
-export const submitPostCreated = checkpoints.mutation("post.created", {
-  args: {
-    userId: v.string(),
-    postId: v.string(),
-  },
-  handler: postCreatedHandler,
+const onCompleteRef = makeFunctionReference<
+  "mutation",
+  CheckpointCompletion,
+  null
+>("index.test:onComplete");
+const checkpoints = new ConvexCheckpoints(components.convexCheckpoints, {
+  onComplete: onCompleteRef,
 });
 
-const signupHandler = vi.fn();
-const idempotentCheckpoints = new ConvexCheckpoints<{
-  "user.signup": { userId: string };
-}>(components.convexCheckpoints);
-export const submitSignup = idempotentCheckpoints.mutation("user.signup", {
-  args: {
-    userId: v.string(),
-    idempotencyKey: v.optional(v.string()),
+export const { getProgress, listRules } = checkpoints.api();
+
+export const configureRules = mutationGeneric({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await checkpoints.registerRule(ctx, {
+      name: "credits-after-five-posts",
+      factor: "create_post",
+      threshold: 5,
+      actionName: "add_credits",
+    });
+    return null;
   },
-  handler: signupHandler,
 });
 
-const testApi = (
-  anyApi as unknown as ApiFromModules<{
-    "index.test": {
-      submitPostCreated: typeof submitPostCreated;
-      submitSignup: typeof submitSignup;
-      listByUser: typeof listByUser;
-    };
-  }>
-)["index.test"];
-
-function assertSubmitTypes(
-  ctx: Parameters<
-    ConvexCheckpoints<{ "post.created": { userId: string; postId: string } }>["submit"]
-  >[0],
-) {
-  void checkpoints.submit(ctx, {
-    name: "post.created",
-    payload: { userId: "user1", postId: "post1" },
-  });
-
-  void checkpoints.submit(ctx, {
-    // @ts-expect-error checkpoint names must exist in the checkpoint registry
-    name: "user.signup",
-    payload: { userId: "user1", postId: "post1" },
-  });
-
-  void checkpoints.submit(ctx, {
-    name: "post.created",
-    // @ts-expect-error payload must match the checkpoint name
-    payload: { userId: "user1" },
-  });
-}
-
-checkpoints.mutation("post.created", {
+export const trackPostCreated = mutationGeneric({
   args: {
     userId: v.string(),
-    postId: v.string(),
+    increment: v.optional(v.number()),
   },
+  handler: async (ctx, args) => {
+    return await checkpoints.trackEvent(ctx, {
+      userId: args.userId,
+      factor: "create_post",
+      increment: args.increment,
+    });
+  },
+});
+
+const onCompleteHandler = vi.fn();
+export const onComplete = internalMutationGeneric({
+  args: {
+    userId: v.string(),
+    factor: v.string(),
+    ruleName: v.string(),
+    actionName: v.string(),
+    value: v.number(),
+    threshold: v.number(),
+    completedAt: v.number(),
+    occurredAt: v.optional(v.number()),
+    payload: v.optional(v.any()),
+  },
+  returns: v.null(),
   handler: async (_ctx, args) => {
-    args.userId satisfies string;
-    args.postId satisfies string;
+    onCompleteHandler(args);
+    return null;
   },
 });
 
-checkpoints.mutation("post.created", {
-  args: {
-    userId: v.string(),
-    postId: v.string(),
-  },
-  // @ts-expect-error checkpoint mutation args are inferred from validators
-  handler: async (_ctx, args: { userId: number }) => {
-    void args;
-  },
-});
+const configureRulesRef = makeFunctionReference<
+  "mutation",
+  Record<string, never>,
+  null
+>("index.test:configureRules");
+const trackPostCreatedRef = makeFunctionReference<
+  "mutation",
+  { userId: string; increment?: number },
+  { value: number }
+>("index.test:trackPostCreated");
+const listRulesRef = makeFunctionReference<
+  "query",
+  Record<string, never>,
+  Array<{ name: string }>
+>("index.test:listRules");
+const getProgressRef = makeFunctionReference<
+  "query",
+  { userId: string; factor: string },
+  { value: number } | null
+>("index.test:getProgress");
 
-void assertSubmitTypes;
-
-describe("client tests", () => {
-  test("exports submit and list functions from checkpoint definitions", async () => {
-    postCreatedHandler.mockClear();
+describe("client wrapper", () => {
+  test("registers callback-backed rules and tracks progress", async () => {
     const t = initConvexTest();
-    await t.mutation(testApi.submitPostCreated, {
-      userId: "user1",
-      postId: "post1",
-    });
+    await t.mutation(configureRulesRef, {});
 
-    expect(postCreatedHandler).toHaveBeenCalledOnce();
-    expect(postCreatedHandler.mock.calls[0][1]).toMatchObject({
-      userId: "user1",
-      postId: "post1",
-    });
+    const rules = await t.query(listRulesRef, {});
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe("credits-after-five-posts");
 
-    const checkpointsForUser = await t.query(testApi.listByUser, {
+    const result = await t.mutation(trackPostCreatedRef, {
       userId: "user1",
+      increment: 2,
     });
-    expect(checkpointsForUser).toHaveLength(1);
-    expect(checkpointsForUser[0].name).toBe("post.created");
+    expect(result.value).toBe(2);
+
+    const progress = await t.query(getProgressRef, {
+      userId: "user1",
+      factor: "create_post",
+    });
+    expect(progress?.value).toBe(2);
   });
 
-  test("does not re-run handlers for duplicate idempotency keys", async () => {
-    signupHandler.mockClear();
+  test("runs the host callback after threshold completion", async () => {
+    vi.useFakeTimers();
+    onCompleteHandler.mockClear();
     const t = initConvexTest();
-    await t.mutation(testApi.submitSignup, {
+    await t.mutation(configureRulesRef, {});
+
+    await t.mutation(trackPostCreatedRef, {
       userId: "user1",
-      idempotencyKey: "signup:user1",
+      increment: 4,
     });
-    await t.mutation(testApi.submitSignup, {
+    expect(onCompleteHandler).not.toHaveBeenCalled();
+
+    await t.mutation(trackPostCreatedRef, {
       userId: "user1",
-      idempotencyKey: "signup:user1",
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(onCompleteHandler).toHaveBeenCalledOnce();
+    expect(onCompleteHandler.mock.calls[0][0]).toMatchObject({
+      userId: "user1",
+      factor: "create_post",
+      ruleName: "credits-after-five-posts",
+      actionName: "add_credits",
+      value: 5,
+      threshold: 5,
     });
 
-    expect(signupHandler).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 });
